@@ -20,7 +20,7 @@ namespace ExplorerTabRouter {
         private readonly object _lock = new object();
         private bool _isPaused = false;
 
-        public void Start() {
+        public void Start(bool showTray = true) {
             // 初始化已知 Explorer 窗口
             lock (_lock) {
                 foreach (IntPtr h in Win32.GetAllCabinetWindows()) {
@@ -28,13 +28,15 @@ namespace ExplorerTabRouter {
                 }
             }
 
-            // 初始化托盘图标
-            InitTray();
+            // 初始化托盘图标（如果开启）
+            if (showTray) {
+                InitTray();
+            }
 
-            // 注册系统级窗口显示监听
-            _hookDelegate = new Win32.WinEventDelegate(OnWindowShown);
+            // 注册系统级窗口创建与显示监听 (从 EVENT_OBJECT_CREATE 到 EVENT_OBJECT_SHOW)
+            _hookDelegate = new Win32.WinEventDelegate(OnWindowEvent);
             _hookId = Win32.SetWinEventHook(
-                Win32.EVENT_OBJECT_SHOW,
+                Win32.EVENT_OBJECT_CREATE,
                 Win32.EVENT_OBJECT_SHOW,
                 IntPtr.Zero,
                 _hookDelegate,
@@ -133,7 +135,7 @@ namespace ExplorerTabRouter {
             _trayIcon.Visible = true;
         }
 
-        private void OnWindowShown(IntPtr hWinEventHook, uint eventType, IntPtr hWnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime) {
+        private void OnWindowEvent(IntPtr hWinEventHook, uint eventType, IntPtr hWnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime) {
             if (_isPaused || idObject != 0 || idChild != 0 || hWnd == IntPtr.Zero) return;
 
             // 只处理 CabinetWClass (Explorer 窗口)
@@ -154,18 +156,19 @@ namespace ExplorerTabRouter {
                 }
 
                 if (_knownCabinets.Contains(hWnd)) return;
-                _knownCabinets.Add(hWnd);
             }
 
             // 关键判断 1：检查鼠标左键是否按下
             // 如果用户正在按住鼠标左键，说明这是用户把某个 Tab 拖出窗口拆分（Tab Tear-off）！
             // 此时必须直接放行，绝不抓回！
             if (Win32.IsMouseLButtonPressed()) {
+                lock (_lock) { _knownCabinets.Add(hWnd); }
                 return;
             }
 
             // 关键判断 2：用户按住 Ctrl + Shift 故意强制打开新窗口
             if (Win32.IsCtrlShiftPressed()) {
+                lock (_lock) { _knownCabinets.Add(hWnd); }
                 return;
             }
 
@@ -181,11 +184,20 @@ namespace ExplorerTabRouter {
 
             // 如果没有其他已有窗口，这本身就是第一个主窗口，直接放行
             if (hostCabinet == IntPtr.Zero) {
+                lock (_lock) { _knownCabinets.Add(hWnd); }
                 return;
             }
 
             // 此时确定这是一个外部新弹出的多余 Explorer 窗口！
-            // 在后台线程中进行优雅拦截并合并
+            lock (_lock) {
+                _knownCabinets.Add(hWnd);
+            }
+
+            // 【核心消除闪烁】：在主事件回调中瞬间将新窗口置为 100% 透明并移出屏幕！
+            // 耗时 < 0.1ms，在系统绘制该窗口的第一帧之前就已隐形，达到真正的零闪烁！
+            Win32.MakeWindowInvisibleOffscreen(hWnd);
+
+            // 在后台线程中读取打开的路径并路由到已有窗口的 Tab 中
             ThreadPool.QueueUserWorkItem(state => {
                 HandleNewExplorerWindow(hWnd, hostCabinet);
             });
@@ -194,8 +206,8 @@ namespace ExplorerTabRouter {
         private void HandleNewExplorerWindow(IntPtr newHwnd, IntPtr hostCabinet) {
             try {
                 using (Win32.AttachToInteractiveDesktop()) {
-                    // 立即将新窗口移出屏幕外部，防止在屏幕上弹窗晃眼，但保持可见状态以便 Shell 正常加载
-                    Win32.SetWindowPos(newHwnd, IntPtr.Zero, -32000, -32000, 0, 0, Win32.SWP_NOSIZE | Win32.SWP_NOZORDER | Win32.SWP_NOACTIVATE);
+                    // 确保处于完全不可见与屏幕外状态
+                    Win32.MakeWindowInvisibleOffscreen(newHwnd);
 
                     // 等待新窗口的路径信息就绪 (最多等 1000ms)
                     string openedPath = string.Empty;

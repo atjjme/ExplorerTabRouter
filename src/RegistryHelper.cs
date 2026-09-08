@@ -79,10 +79,10 @@ namespace ExplorerTabRouter {
         /// <summary>
         /// 启用开机自启动
         /// </summary>
-        public static bool InstallAutoStart() {
+        public static bool InstallAutoStart(bool silent = false) {
             try {
                 string exePath = GetExecutablePath();
-                string cmd = "\"" + exePath + "\" --daemon";
+                string cmd = "\"" + exePath + "\" --daemon" + (silent ? " --silent" : "");
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RUN_KEY, true)) {
                     if (key != null) {
                         key.SetValue(APP_NAME, cmd, RegistryValueKind.String);
@@ -121,6 +121,23 @@ namespace ExplorerTabRouter {
                     if (key == null) return false;
                     string val = key.GetValue(APP_NAME) as string;
                     return !string.IsNullOrEmpty(val);
+                }
+            } catch {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 检查是否为纯静默开机自启动（无托盘）
+        /// </summary>
+        public static bool IsAutoStartSilent() {
+            try {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RUN_KEY)) {
+                    if (key == null) return false;
+                    string val = key.GetValue(APP_NAME) as string;
+                    if (string.IsNullOrEmpty(val)) return false;
+                    return val.IndexOf("--silent", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                           val.IndexOf("-s", StringComparison.OrdinalIgnoreCase) >= 0;
                 }
             } catch {
                 return false;

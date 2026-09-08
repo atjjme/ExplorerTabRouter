@@ -33,8 +33,9 @@ namespace ExplorerTabRouter {
 
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_LAYERED = 0x80000;
-        public const int LWA_ALPHA = 0x2;
+        public const uint LWA_ALPHA = 0x2;
 
+        public const uint EVENT_OBJECT_CREATE = 0x8000;
         public const uint EVENT_OBJECT_SHOW = 0x8002;
         public const uint WINEVENT_OUTOFCONTEXT = 0;
         public const uint WINEVENT_SKIPOWNPROCESS = 2;
@@ -114,6 +115,45 @@ namespace ExplorerTabRouter {
 
         [DllImport("kernel32.dll")]
         public static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        public static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+        public static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        public static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+        public static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
+
+        public static int GetWindowLong(IntPtr hWnd, int nIndex) {
+            if (IntPtr.Size == 8)
+                return unchecked((int)GetWindowLongPtr64(hWnd, nIndex).ToInt64());
+            return GetWindowLong32(hWnd, nIndex);
+        }
+
+        public static IntPtr SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong) {
+            if (IntPtr.Size == 8)
+                return SetWindowLongPtr64(hWnd, nIndex, new IntPtr(dwNewLong));
+            return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong));
+        }
+
+        /// <summary>
+        /// 瞬间将窗口置于完全透明并移动到屏幕外，彻底消除新窗口弹出的闪烁感
+        /// </summary>
+        public static void MakeWindowInvisibleOffscreen(IntPtr hWnd) {
+            try {
+                int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+                SetWindowLong(hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+                SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA); // 0% 不透明度 (完全不可见)
+                SetWindowPos(hWnd, IntPtr.Zero, -32000, -32000, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            } catch {}
+        }
 
         /// <summary>
         /// 确保当前线程附加到交互式桌面上，以便在后台任务中枚举和操作窗口

@@ -29,10 +29,23 @@ namespace ExplorerTabRouter {
 
             string firstArg = args[0].Trim();
 
-            // 1. 守护进程模式 (--daemon / -d)
-            if (string.Equals(firstArg, "--daemon", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(firstArg, "-d", StringComparison.OrdinalIgnoreCase)) {
-                
+            // 检查是否包含守护模式标志或静默标志
+            bool isDaemon = false;
+            bool isSilent = false;
+            for (int i = 0; i < args.Length; i++) {
+                string a = args[i].Trim();
+                if (string.Equals(a, "--daemon", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(a, "-d", StringComparison.OrdinalIgnoreCase)) {
+                    isDaemon = true;
+                } else if (string.Equals(a, "--silent", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(a, "--no-tray", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(a, "-s", StringComparison.OrdinalIgnoreCase)) {
+                    isSilent = true;
+                }
+            }
+
+            // 1. 守护进程模式 (--daemon, 包含可选的 --silent)
+            if (isDaemon || (args.Length == 1 && isSilent)) {
                 bool createdNew;
                 using (Mutex mutex = new Mutex(true, MUTEX_NAME, out createdNew)) {
                     if (!createdNew) {
@@ -41,18 +54,27 @@ namespace ExplorerTabRouter {
                     }
 
                     using (DaemonWatcher daemon = new DaemonWatcher()) {
-                        daemon.Start();
+                        daemon.Start(showTray: !isSilent);
                     }
                 }
                 return;
             }
 
-            // 2. 命令行安装关联 (--install / -i)
+            // 2. 命令行安装关联 (--install-silent / --install / -i)
+            if (string.Equals(firstArg, "--install-silent", StringComparison.OrdinalIgnoreCase)) {
+                bool ok1 = RegistryHelper.InstallFolderAssociation();
+                bool ok2 = RegistryHelper.InstallAutoStart(silent: true);
+                string msg = string.Format("ExplorerTabRouter 纯静默后台模式配置完成：\n- 文件夹打开关联: {0}\n- 开机自启(无托盘图标): {1}", 
+                    ok1 ? "成功" : "失败", ok2 ? "成功" : "失败");
+                MessageBox.Show(msg, "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             if (string.Equals(firstArg, "--install", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(firstArg, "-i", StringComparison.OrdinalIgnoreCase)) {
                 bool ok1 = RegistryHelper.InstallFolderAssociation();
-                bool ok2 = RegistryHelper.InstallAutoStart();
-                string msg = string.Format("ExplorerTabRouter 安装完成：\n- 文件夹打开关联: {0}\n- 开机自启动守护: {1}", 
+                bool ok2 = RegistryHelper.InstallAutoStart(silent: false);
+                string msg = string.Format("ExplorerTabRouter 托盘后台模式配置完成：\n- 文件夹打开关联: {0}\n- 开机自启(托盘图标): {1}", 
                     ok1 ? "成功" : "失败", ok2 ? "成功" : "失败");
                 MessageBox.Show(msg, "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
