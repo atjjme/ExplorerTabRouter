@@ -51,18 +51,19 @@ namespace ExplorerTabRouter {
         /// <summary>
         /// 将路径路由至指定的已知宿主 Explorer 窗口
         /// </summary>
-        public static bool RouteOpenIntoCabinet(IntPtr targetCabinet, string targetPath) {
+        public static bool RouteOpenIntoCabinet(IntPtr targetCabinet, string targetPath, dynamic sharedShell = null) {
             using (Win32.AttachToInteractiveDesktop()) {
                 string resolvedPath = NormalizePath(targetPath);
+                dynamic shell = sharedShell ?? Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
 
                 if (!string.IsNullOrEmpty(resolvedPath)) {
-                    if (TrySwitchToExistingTab(targetCabinet, resolvedPath)) {
+                    if (TrySwitchToExistingTab(targetCabinet, resolvedPath, shell)) {
                         Win32.ForceForegroundWindow(targetCabinet);
                         return true;
                     }
                 }
 
-                return OpenNewTabAndNavigate(targetCabinet, resolvedPath);
+                return OpenNewTabAndNavigate(targetCabinet, resolvedPath, shell);
             }
         }
 
@@ -80,30 +81,25 @@ namespace ExplorerTabRouter {
             }
         }
 
-        private static bool OpenNewTabAndNavigate(IntPtr cabinet, string targetPath) {
+        private static bool OpenNewTabAndNavigate(IntPtr cabinet, string targetPath, dynamic shell = null) {
             try {
-                // 1. 记录新建前的 COM Windows 总数
-                int initialCount = 0;
-                try {
-                    dynamic initialShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
-                    initialCount = initialShell.Windows().Count;
-                } catch {}
+                dynamic currentShell = shell ?? Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
+                dynamic windows = currentShell.Windows();
+                int initialCount = windows.Count;
 
-                // 2. 发送新建标签命令 (0xA21B / Ctrl+T)
+                // 2. 异步快速发送新建标签命令 (0xA21B / Ctrl+T)，不阻塞当前线程
                 IntPtr tabWindow = Win32.FindWindowEx(cabinet, IntPtr.Zero, "ShellTabWindowClass", null);
-                if (tabWindow != IntPtr.Zero) {
-                    Win32.SendMessage(tabWindow, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
-                } else {
-                    Win32.SendMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
-                }
+                IntPtr msgTarget = tabWindow != IntPtr.Zero ? tabWindow : cabinet;
+                Win32.PostMessage(msgTarget, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
 
-                // 3. 如果需要导航到具体路径，等待新 Tab 的 COM 对象就绪并导航
-                if (!string.IsNullOrEmpty(targetPath)) {
-                    NavigateNewTab(cabinet, targetPath, initialCount);
-                }
-
-                // 4. 激活窗口并置前
+                // 立即将宿主窗口置前并激活，给予用户即时反馈
                 Win32.ForceForegroundWindow(cabinet);
+
+                // 3. 如果需要导航到具体路径，极速检测新 Tab 并导航 (10ms 间隔)
+                if (!string.IsNullOrEmpty(targetPath)) {
+                    NavigateNewTab(cabinet, targetPath, initialCount, currentShell);
+                }
+
                 return true;
             } catch (Exception ex) {
                 Trace.WriteLine("OpenNewTabAndNavigate error: " + ex.Message);
@@ -111,11 +107,10 @@ namespace ExplorerTabRouter {
             }
         }
 
-        private static bool NavigateNewTab(IntPtr cabinet, string targetPath, int initialCount) {
-            for (int retry = 0; retry < 35; retry++) {
-                Thread.Sleep(80);
+        private static bool NavigateNewTab(IntPtr cabinet, string targetPath, int initialCount, dynamic shell) {
+            for (int retry = 0; retry < 50; retry++) {
+                if (retry > 0) Thread.Sleep(10);
                 try {
-                    dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
                     dynamic windows = shell.Windows();
                     int curCount = windows.Count;
 
@@ -127,26 +122,23 @@ namespace ExplorerTabRouter {
                                     object hwndObj = w.HWND;
                                     if (hwndObj != null && Convert.ToInt64(hwndObj) == (long)cabinet) {
                                         w.Navigate2(targetPath);
-                                        Thread.Sleep(250);
                                         return true;
                                     }
                                 }
                             } catch {
-                                // 窗口可能正在初始化，继续等待
                             }
                         }
                     }
                 } catch {
-                    // COM 重试
                 }
             }
             return false;
         }
 
-        private static bool TrySwitchToExistingTab(IntPtr cabinet, string targetPath) {
+        private static bool TrySwitchToExistingTab(IntPtr cabinet, string targetPath, dynamic shell = null) {
             try {
-                dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
-                dynamic windows = shell.Windows();
+                dynamic currentShell = shell ?? Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
+                dynamic windows = currentShell.Windows();
                 int count = windows.Count;
 
                 int tabIndex = 0;
@@ -162,7 +154,7 @@ namespace ExplorerTabRouter {
                         if (hwnd == (long)cabinet) {
                             string url = (string)w.LocationURL;
                             if (IsPathMatch(targetPath, url)) {
-                                Win32.SendMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_SWITCH_TAB, (IntPtr)(tabIndex + 1));
+                                Win32.PostMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_SWITCH_TAB, (IntPtr)(tabIndex + 1));
                                 return true;
                             }
                             tabIndex++;

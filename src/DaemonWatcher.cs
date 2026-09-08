@@ -19,6 +19,20 @@ namespace ExplorerTabRouter {
         private readonly HashSet<IntPtr> _knownCabinets = new HashSet<IntPtr>();
         private readonly object _lock = new object();
         private bool _isPaused = false;
+        private dynamic _shell;
+
+        private dynamic GetShell() {
+            try {
+                if (_shell != null) {
+                    var count = _shell.Windows().Count;
+                    return _shell;
+                }
+            } catch {}
+            try {
+                _shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
+            } catch {}
+            return _shell;
+        }
 
         public void Start(bool showTray = true) {
             // 初始化已知 Explorer 窗口
@@ -209,19 +223,23 @@ namespace ExplorerTabRouter {
                     // 确保处于完全不可见与屏幕外状态
                     Win32.MakeWindowInvisibleOffscreen(newHwnd);
 
-                    // 等待新窗口的路径信息就绪 (最多等 1000ms)
+                    // 1. 立即将宿主窗口置前激活，给用户即时反馈
+                    Win32.ForceForegroundWindow(hostCabinet);
+
+                    dynamic shell = GetShell();
+
+                    // 2. 超低延时自旋检测新窗口路径 (每 10ms 轮询一次，最多等 800ms)
                     string openedPath = string.Empty;
-                    for (int i = 0; i < 20; i++) {
-                        openedPath = GetPathFromHwnd(newHwnd);
+                    for (int i = 0; i < 80; i++) {
+                        openedPath = GetPathFromHwnd(newHwnd, shell);
                         if (!string.IsNullOrEmpty(openedPath)) break;
-                        Thread.Sleep(50);
+                        Thread.Sleep(10);
                     }
 
-                    // 在宿主窗口中打开该路径（新标签或切换至已打开标签）
-                    ExplorerManager.RouteOpenIntoCabinet(hostCabinet, openedPath);
+                    // 3. 在宿主窗口中打开该路径（新标签或切换至已打开标签）
+                    ExplorerManager.RouteOpenIntoCabinet(hostCabinet, openedPath, shell);
 
-                    // 关闭多余的新窗口
-                    Thread.Sleep(100);
+                    // 4. 立即异步关闭多余的新窗口 (无需任何 sleep 延时)
                     Win32.PostMessage(newHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 }
             } catch (Exception ex) {
@@ -229,23 +247,21 @@ namespace ExplorerTabRouter {
             }
         }
 
-        private string GetPathFromHwnd(IntPtr hWnd) {
+        private static string GetPathFromHwnd(IntPtr hWnd, dynamic shell) {
+            if (shell == null) return string.Empty;
             try {
-                using (Win32.AttachToInteractiveDesktop()) {
-                    dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
-                    foreach (dynamic w in (System.Collections.IEnumerable)shell.Windows()) {
-                        try {
-                            if (w != null && (long)w.HWND == (long)hWnd) {
-                                string url = (string)w.LocationURL;
-                                if (!string.IsNullOrEmpty(url)) {
-                                    if (url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase)) {
-                                        return new Uri(url).LocalPath;
-                                    }
-                                    return url;
+                foreach (dynamic w in (System.Collections.IEnumerable)shell.Windows()) {
+                    try {
+                        if (w != null && (long)w.HWND == (long)hWnd) {
+                            string url = (string)w.LocationURL;
+                            if (!string.IsNullOrEmpty(url)) {
+                                if (url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase)) {
+                                    return new Uri(url).LocalPath;
                                 }
+                                return url;
                             }
-                        } catch {}
-                    }
+                        }
+                    } catch {}
                 }
             } catch {}
             return string.Empty;
