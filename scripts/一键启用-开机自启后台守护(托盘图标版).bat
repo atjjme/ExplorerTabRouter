@@ -22,11 +22,9 @@ echo.
 echo 正在停止可能正在运行的旧实例...
 taskkill /f /im ExplorerTabRouter.exe >nul 2>&1
 
-echo 正在写入文件夹打开关联 (免管理员权限)...
-reg add "HKCU\Software\Classes\Folder\shell\open\command" /ve /t REG_SZ /d "\"%EXE_PATH%\" \"%%1\"" /f >nul
-reg add "HKCU\Software\Classes\Folder\shell\open\command" /v "DelegateExecute" /t REG_SZ /d "" /f >nul
-reg add "HKCU\Software\Classes\Directory\shell\open\command" /ve /t REG_SZ /d "\"%EXE_PATH%\" \"%%1\"" /f >nul
-reg add "HKCU\Software\Classes\Directory\shell\open\command" /v "DelegateExecute" /t REG_SZ /d "" /f >nul
+echo 正在恢复文件夹内部正常前进后退导航...
+reg delete "HKCU\Software\Classes\Folder\shell\open" /f >nul 2>&1
+reg delete "HKCU\Software\Classes\Directory\shell\open" /f >nul 2>&1
 
 echo 正在添加当前用户开机自启动项 (托盘图标)...
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "ExplorerTabRouter" /t REG_SZ /d "\"%EXE_PATH%\" --daemon" /f >nul

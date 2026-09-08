@@ -27,9 +27,9 @@ echo.
 :: 3. 检查文件夹关联注册表
 reg query "HKCU\Software\Classes\Folder\shell\open\command" 2>nul | find /i "ExplorerTabRouter" >nul
 if %errorlevel% equ 0 (
-    echo [文件夹打开关联] 已启用 [HKCU Folder\shell\open\command -^> ExplorerTabRouter]
+    echo [文件夹内部导航] 注册表覆盖已启用 [外部生效但会导致窗口内点开子文件夹也弹出新Tab]
 ) else (
-    echo [文件夹打开关联] 未启用 [使用系统默认]
+    echo [文件夹内部导航] 正常原生行为 [窗口内点击在当前Tab中前进，外部打开由守护合并为新Tab]
 )
 echo.
 
