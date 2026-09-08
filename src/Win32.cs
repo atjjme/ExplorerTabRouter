@@ -192,29 +192,33 @@ namespace ExplorerTabRouter {
         /// 获取当前所有的 CabinetWClass (Explorer 窗口)
         /// </summary>
         public static List<IntPtr> GetAllCabinetWindows() {
-            List<IntPtr> list = new List<IntPtr>();
-            IntPtr current = IntPtr.Zero;
-            while (true) {
-                current = FindWindowEx(IntPtr.Zero, current, "CabinetWClass", null);
-                if (current == IntPtr.Zero) break;
-                list.Add(current);
+            using (AttachToInteractiveDesktop()) {
+                List<IntPtr> list = new List<IntPtr>();
+                IntPtr current = IntPtr.Zero;
+                while (true) {
+                    current = FindWindowEx(IntPtr.Zero, current, "CabinetWClass", null);
+                    if (current == IntPtr.Zero) break;
+                    list.Add(current);
+                }
+                return list;
             }
-            return list;
         }
 
         /// <summary>
         /// 获取指定 Explorer 窗口内的所有 Tab (ShellTabWindowClass)
         /// </summary>
         public static List<IntPtr> GetTabsForCabinet(IntPtr cabinet) {
-            List<IntPtr> list = new List<IntPtr>();
-            if (cabinet == IntPtr.Zero) return list;
-            IntPtr current = IntPtr.Zero;
-            while (true) {
-                current = FindWindowEx(cabinet, current, "ShellTabWindowClass", null);
-                if (current == IntPtr.Zero) break;
-                list.Add(current);
+            using (AttachToInteractiveDesktop()) {
+                List<IntPtr> list = new List<IntPtr>();
+                if (cabinet == IntPtr.Zero) return list;
+                IntPtr current = IntPtr.Zero;
+                while (true) {
+                    current = FindWindowEx(cabinet, current, "ShellTabWindowClass", null);
+                    if (current == IntPtr.Zero) break;
+                    list.Add(current);
+                }
+                return list;
             }
-            return list;
         }
 
         /// <summary>

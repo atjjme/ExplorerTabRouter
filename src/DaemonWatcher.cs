@@ -141,6 +141,18 @@ namespace ExplorerTabRouter {
             if (className != "CabinetWClass") return;
 
             lock (_lock) {
+                // 清理已失效的窗口句柄
+                List<IntPtr> stale = null;
+                foreach (IntPtr k in _knownCabinets) {
+                    if (!Win32.IsWindow(k)) {
+                        if (stale == null) stale = new List<IntPtr>();
+                        stale.Add(k);
+                    }
+                }
+                if (stale != null) {
+                    foreach (IntPtr s in stale) _knownCabinets.Remove(s);
+                }
+
                 if (_knownCabinets.Contains(hWnd)) return;
                 _knownCabinets.Add(hWnd);
             }
@@ -157,49 +169,49 @@ namespace ExplorerTabRouter {
                 return;
             }
 
-            // 关键判断 3：如果系统中当前只有这一个 Explorer 窗口，直接放行作为主窗口
+            // 关键判断 3：查找系统中是否存在其他已有的宿主 Explorer 窗口
             List<IntPtr> allCabinets = Win32.GetAllCabinetWindows();
-            if (allCabinets.Count <= 1) {
+            IntPtr hostCabinet = IntPtr.Zero;
+            foreach (IntPtr c in allCabinets) {
+                if (c != hWnd && Win32.IsWindowVisible(c)) {
+                    hostCabinet = c;
+                    break;
+                }
+            }
+
+            // 如果没有其他已有窗口，这本身就是第一个主窗口，直接放行
+            if (hostCabinet == IntPtr.Zero) {
                 return;
             }
 
             // 此时确定这是一个外部新弹出的多余 Explorer 窗口！
             // 在后台线程中进行优雅拦截并合并
             ThreadPool.QueueUserWorkItem(state => {
-                HandleNewExplorerWindow(hWnd, allCabinets);
+                HandleNewExplorerWindow(hWnd, hostCabinet);
             });
         }
 
-        private void HandleNewExplorerWindow(IntPtr newHwnd, List<IntPtr> allCabinets) {
+        private void HandleNewExplorerWindow(IntPtr newHwnd, IntPtr hostCabinet) {
             try {
-                // 等待窗口完全加载路径信息 (最多等 400ms)
-                string openedPath = string.Empty;
-                for (int i = 0; i < 8; i++) {
-                    openedPath = GetPathFromHwnd(newHwnd);
-                    if (!string.IsNullOrEmpty(openedPath)) break;
-                    Thread.Sleep(50);
-                }
+                using (Win32.AttachToInteractiveDesktop()) {
+                    // 立即将新窗口移出屏幕外部，防止在屏幕上弹窗晃眼，但保持可见状态以便 Shell 正常加载
+                    Win32.SetWindowPos(newHwnd, IntPtr.Zero, -32000, -32000, 0, 0, Win32.SWP_NOSIZE | Win32.SWP_NOZORDER | Win32.SWP_NOACTIVATE);
 
-                // 找到另一个已存在的宿主 Cabinet 窗口
-                IntPtr targetCabinet = IntPtr.Zero;
-                foreach (IntPtr c in allCabinets) {
-                    if (c != newHwnd && Win32.IsWindowVisible(c)) {
-                        targetCabinet = c;
-                        break;
+                    // 等待新窗口的路径信息就绪 (最多等 1000ms)
+                    string openedPath = string.Empty;
+                    for (int i = 0; i < 20; i++) {
+                        openedPath = GetPathFromHwnd(newHwnd);
+                        if (!string.IsNullOrEmpty(openedPath)) break;
+                        Thread.Sleep(50);
                     }
+
+                    // 在宿主窗口中打开该路径（新标签或切换至已打开标签）
+                    ExplorerManager.RouteOpenIntoCabinet(hostCabinet, openedPath);
+
+                    // 关闭多余的新窗口
+                    Thread.Sleep(100);
+                    Win32.PostMessage(newHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 }
-
-                if (targetCabinet == IntPtr.Zero) return;
-
-                // 立即隐藏新窗口，防止闪烁
-                Win32.ShowWindow(newHwnd, Win32.SW_HIDE);
-
-                // 在宿主窗口中打开该路径
-                ExplorerManager.RouteOpen(openedPath);
-
-                // 关闭多余的新窗口
-                Thread.Sleep(50);
-                Win32.PostMessage(newHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
             } catch (Exception ex) {
                 Trace.WriteLine("HandleNewExplorerWindow error: " + ex.Message);
             }
@@ -207,22 +219,21 @@ namespace ExplorerTabRouter {
 
         private string GetPathFromHwnd(IntPtr hWnd) {
             try {
-                dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
-                dynamic windows = shell.Windows();
-                int count = windows.Count;
-                for (int i = 0; i < count; i++) {
-                    try {
-                        dynamic w = windows.Item(i);
-                        if (w != null && (long)w.HWND == (long)hWnd) {
-                            string url = (string)w.LocationURL;
-                            if (!string.IsNullOrEmpty(url)) {
-                                if (url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase)) {
-                                    return new Uri(url).LocalPath;
+                using (Win32.AttachToInteractiveDesktop()) {
+                    dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
+                    foreach (dynamic w in (System.Collections.IEnumerable)shell.Windows()) {
+                        try {
+                            if (w != null && (long)w.HWND == (long)hWnd) {
+                                string url = (string)w.LocationURL;
+                                if (!string.IsNullOrEmpty(url)) {
+                                    if (url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase)) {
+                                        return new Uri(url).LocalPath;
+                                    }
+                                    return url;
                                 }
-                                return url;
                             }
-                        }
-                    } catch {}
+                        } catch {}
+                    }
                 }
             } catch {}
             return string.Empty;

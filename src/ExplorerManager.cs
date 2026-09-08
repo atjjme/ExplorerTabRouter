@@ -48,6 +48,24 @@ namespace ExplorerTabRouter {
             }
         }
 
+        /// <summary>
+        /// 将路径路由至指定的已知宿主 Explorer 窗口
+        /// </summary>
+        public static bool RouteOpenIntoCabinet(IntPtr targetCabinet, string targetPath) {
+            using (Win32.AttachToInteractiveDesktop()) {
+                string resolvedPath = NormalizePath(targetPath);
+
+                if (!string.IsNullOrEmpty(resolvedPath)) {
+                    if (TrySwitchToExistingTab(targetCabinet, resolvedPath)) {
+                        Win32.ForceForegroundWindow(targetCabinet);
+                        return true;
+                    }
+                }
+
+                return OpenNewTabAndNavigate(targetCabinet, resolvedPath);
+            }
+        }
+
         public static void LaunchNewExplorerWindow(string path) {
             try {
                 ProcessStartInfo psi = new ProcessStartInfo();

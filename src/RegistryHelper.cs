@@ -11,7 +11,7 @@ namespace ExplorerTabRouter {
         private const string APP_NAME = "ExplorerTabRouter";
 
         public static string GetExecutablePath() {
-            return Assembly.GetExecutingAssembly().Location;
+            return Path.GetFullPath(Assembly.GetExecutingAssembly().Location);
         }
 
         /// <summary>
