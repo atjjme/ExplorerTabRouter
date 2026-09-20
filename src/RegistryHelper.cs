@@ -5,8 +5,6 @@ using Microsoft.Win32;
 
 namespace ExplorerTabRouter {
     public static class RegistryHelper {
-        private const string FOLDER_OPEN_CMD_KEY = @"Software\Classes\Folder\shell\open\command";
-        private const string DIRECTORY_OPEN_CMD_KEY = @"Software\Classes\Directory\shell\open\command";
         private const string RUN_KEY = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string APP_NAME = "ExplorerTabRouter";
 
@@ -15,64 +13,28 @@ namespace ExplorerTabRouter {
         }
 
         /// <summary>
-        /// 注册文件夹打开关联（仅在当前用户 HKCU 下修改，免管理员权限，安全可逆）
+        /// 自动清理历史遗留的免常驻注册表文件夹关联，确保系统 100% 恢复原生纯净
         /// </summary>
-        public static bool InstallFolderAssociation() {
+        public static void CleanupLegacyFolderAssociation() {
             try {
-                string exePath = GetExecutablePath();
-                string command = "\"" + exePath + "\" \"%1\"";
-
-                // 1. Folder\shell\open\command
-                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(FOLDER_OPEN_CMD_KEY)) {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Folder\shell\open\command", false)) {
                     if (key != null) {
-                        key.SetValue("", command, RegistryValueKind.String);
-                        key.SetValue("DelegateExecute", "", RegistryValueKind.String);
+                        string val = key.GetValue("") as string;
+                        if (!string.IsNullOrEmpty(val) && val.IndexOf("ExplorerTabRouter", StringComparison.OrdinalIgnoreCase) >= 0) {
+                            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Folder\shell\open", false);
+                        }
                     }
                 }
-
-                // 2. Directory\shell\open\command
-                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(DIRECTORY_OPEN_CMD_KEY)) {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Directory\shell\open\command", false)) {
                     if (key != null) {
-                        key.SetValue("", command, RegistryValueKind.String);
-                        key.SetValue("DelegateExecute", "", RegistryValueKind.String);
+                        string val = key.GetValue("") as string;
+                        if (!string.IsNullOrEmpty(val) && val.IndexOf("ExplorerTabRouter", StringComparison.OrdinalIgnoreCase) >= 0) {
+                            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Directory\shell\open", false);
+                        }
                     }
-                }
-
-                return true;
-            } catch (Exception ex) {
-                Console.WriteLine("安装文件夹关联失败: " + ex.Message);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 移除文件夹关联，完全还原系统默认行为
-        /// </summary>
-        public static bool UninstallFolderAssociation() {
-            try {
-                // 删除 HKCU 下的自定义 key
-                Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Folder\shell\open", false);
-                Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Directory\shell\open", false);
-                return true;
-            } catch (Exception ex) {
-                Console.WriteLine("卸载文件夹关联失败: " + ex.Message);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 检查是否已安装文件夹关联
-        /// </summary>
-        public static bool IsFolderAssociationInstalled() {
-            try {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(FOLDER_OPEN_CMD_KEY)) {
-                    if (key == null) return false;
-                    string val = key.GetValue("") as string;
-                    if (string.IsNullOrEmpty(val)) return false;
-                    return val.IndexOf("ExplorerTabRouter", StringComparison.OrdinalIgnoreCase) >= 0;
                 }
             } catch {
-                return false;
+                // 忽略清理异常
             }
         }
 

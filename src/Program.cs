@@ -63,34 +63,28 @@ namespace ExplorerTabRouter {
                 return;
             }
 
-            // 2. 命令行安装关联 (--install-silent / --install / -i)
+            // 2. 命令行配置自启动 (--install-silent / --install / -i)
             if (string.Equals(firstArg, "--install-silent", StringComparison.OrdinalIgnoreCase)) {
-                bool ok1 = RegistryHelper.InstallFolderAssociation();
-                bool ok2 = RegistryHelper.InstallAutoStart(silent: true);
-                string msg = string.Format("ExplorerTabRouter 纯静默后台模式配置完成：\n- 文件夹打开关联: {0}\n- 开机自启(无托盘图标): {1}", 
-                    ok1 ? "成功" : "失败", ok2 ? "成功" : "失败");
-                MessageBox.Show(msg, "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RegistryHelper.CleanupLegacyFolderAssociation();
+                bool ok = RegistryHelper.InstallAutoStart(silent: true);
+                MessageBox.Show(ok ? "ExplorerTabRouter 已成功设置开机自启 (纯静默模式)！" : "设置自启动失败。", "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             if (string.Equals(firstArg, "--install", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(firstArg, "-i", StringComparison.OrdinalIgnoreCase)) {
-                bool ok1 = RegistryHelper.InstallFolderAssociation();
-                bool ok2 = RegistryHelper.InstallAutoStart(silent: false);
-                string msg = string.Format("ExplorerTabRouter 托盘后台模式配置完成：\n- 文件夹打开关联: {0}\n- 开机自启(托盘图标): {1}", 
-                    ok1 ? "成功" : "失败", ok2 ? "成功" : "失败");
-                MessageBox.Show(msg, "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RegistryHelper.CleanupLegacyFolderAssociation();
+                bool ok = RegistryHelper.InstallAutoStart(silent: false);
+                MessageBox.Show(ok ? "ExplorerTabRouter 已成功设置开机自启 (托盘图标模式)！" : "设置自启动失败。", "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             // 3. 命令行卸载还原 (--uninstall / -u)
             if (string.Equals(firstArg, "--uninstall", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(firstArg, "-u", StringComparison.OrdinalIgnoreCase)) {
-                bool ok1 = RegistryHelper.UninstallFolderAssociation();
-                bool ok2 = RegistryHelper.UninstallAutoStart();
-                string msg = string.Format("ExplorerTabRouter 已卸载并还原：\n- 文件夹关联: {0}\n- 开机自启动: {1}", 
-                    ok1 ? "已还原系统默认" : "失败", ok2 ? "已移除" : "失败");
-                MessageBox.Show(msg, "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RegistryHelper.CleanupLegacyFolderAssociation();
+                bool ok = RegistryHelper.UninstallAutoStart();
+                MessageBox.Show(ok ? "ExplorerTabRouter 开机自启已成功移除，系统关联已还原默认。" : "移除开机自启动失败或未曾注册。", "ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 

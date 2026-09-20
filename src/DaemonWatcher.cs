@@ -80,21 +80,8 @@ namespace ExplorerTabRouter {
             pauseItem.Checked = !_isPaused;
             _contextMenu.Items.Add(pauseItem);
 
-            // 文件夹关联选项
-            ToolStripMenuItem assocItem = new ToolStripMenuItem("注册文件夹右键/双击路由", null, (s, e) => {
-                var mi = (ToolStripMenuItem)s;
-                if (mi.Checked) {
-                    RegistryHelper.UninstallFolderAssociation();
-                    mi.Checked = false;
-                    MessageBox.Show("已取消文件夹打开关联，还原为系统默认。", "ExplorerTabRouter");
-                } else {
-                    RegistryHelper.InstallFolderAssociation();
-                    mi.Checked = true;
-                    MessageBox.Show("已成功注册文件夹打开关联！外部打开文件夹将自动路由到已有窗口新标签。", "ExplorerTabRouter");
-                }
-            });
-            assocItem.Checked = RegistryHelper.IsFolderAssociationInstalled();
-            _contextMenu.Items.Add(assocItem);
+            // 自动清理可能存在的历史遗留注册表关联，确保内部浏览绝不被误伤
+            RegistryHelper.CleanupLegacyFolderAssociation();
 
             // 开机启动选项
             ToolStripMenuItem autoStartItem = new ToolStripMenuItem("开机自动启动", null, (s, e) => {

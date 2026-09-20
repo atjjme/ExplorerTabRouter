@@ -1,40 +1,53 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
   <defs>
-    <linearGradient id="monoFolderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38BDF8"/>
-      <stop offset="100%" stop-color="#6366F1"/>
+    <linearGradient id="folderStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="60%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
     </linearGradient>
-    <linearGradient id="pathGrad1" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#06B6D4"/>
-      <stop offset="100%" stop-color="#38BDF8"/>
+    <linearGradient id="folderFill" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="flowStroke" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0EA5E9"/>
+      <stop offset="100%" stop-color="#0284C7"/>
     </linearGradient>
   </defs>
 
-  <!-- Monoline Folder Outer Contour -->
-  <!-- Rounded corner folder shape: tab on top-left, dips and goes across, round body -->
-  <path d="M 40 84 C 40 68 52 56 68 56 L 102 56 C 111 56 119 61 124 68 L 136 84 L 196 84 C 212 84 224 96 224 112 L 224 188 C 224 204 212 216 196 216 L 68 216 C 52 216 40 204 40 188 Z"
-        fill="none" stroke="url(#monoFolderGrad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Folder Body (Maximized to edges: X from 16 to 240, Y from 28 to 228) -->
+  <path d="M 18 64 C 18 44 34 28 54 28 L 98 28 C 110 28 120 35 127 44 L 140 64 L 202 64 C 222 64 238 80 238 100 L 238 192 C 238 212 222 228 202 228 L 54 228 C 34 228 18 212 18 192 Z"
+        fill="url(#folderFill)"
+        stroke="url(#folderStroke)"
+        stroke-width="18"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
 
-  <!-- Horizontal Tab Bar / Divider Line -->
-  <line x1="40" y1="112" x2="224" y2="112" stroke="url(#monoFolderGrad)" stroke-width="12"/>
+  <!-- Horizontal Tab Bar / Window Shelf Line -->
+  <line x1="18" y1="98" x2="238" y2="98" stroke="url(#folderStroke)" stroke-width="16"/>
 
-  <!-- Inside Tab 1 (Base Tab on folder ear) -->
-  <line x1="108" y1="56" x2="108" y2="112" stroke="url(#monoFolderGrad)" stroke-width="10"/>
-  <circle cx="74" cy="84" r="8" fill="#38BDF8"/>
+  <!-- Tab 1 Ear Divider Notch -->
+  <line x1="102" y1="28" x2="102" y2="98" stroke="url(#folderStroke)" stroke-width="15"/>
+  <circle cx="60" cy="63" r="10" fill="#0284C7"/>
 
-  <!-- Inside Tab 2 (Target Routed Tab on right) -->
-  <line x1="168" y1="84" x2="168" y2="112" stroke="url(#monoFolderGrad)" stroke-width="10"/>
-  <!-- Tab 2 active indicator dot -->
-  <circle cx="196" cy="98" r="5" fill="#6366F1"/>
+  <!-- Tab 2 (Target Routed Tab) Indicator Slot -->
+  <line x1="172" y1="64" x2="172" y2="98" stroke="url(#folderStroke)" stroke-width="15"/>
+  <!-- Target Tab Active Pill Badge -->
+  <rect x="186" y="74" width="36" height="12" rx="6" fill="#2563EB"/>
 
-  <!-- Single Continuous Flowing Route Path -->
-  <!-- Entering from outside/bottom-left, looping gracefully in the folder belly, and pointing up to Tab 2 -->
-  <path d="M 76 182 C 76 146 112 140 146 140 C 178 140 188 158 188 174 C 188 190 170 196 148 196 C 122 196 116 178 116 160 L 116 128"
-        fill="none" stroke="url(#pathGrad1)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Dynamic Continuous Flow Route Path (Thick, Bold, Clear) -->
+  <!-- Enters boldly from left/bottom, loops in center and shoots up into Tab 2 -->
+  <path d="M 58 182 C 58 138 106 130 148 130 C 190 130 200 152 200 170 C 200 190 176 198 148 198 C 118 198 112 176 112 150 L 112 118"
+        fill="none"
+        stroke="url(#flowStroke)"
+        stroke-width="16"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
 
-  <!-- Dynamic Arrowhead directly pointing into the Tab 2 region -->
-  <polygon points="116,116 106,132 126,132" fill="#06B6D4"/>
+  <!-- Robust Arrowhead pointing directly into the Tab 2 region -->
+  <polygon points="112,102 98,124 126,124" fill="#0284C7"/>
 
-  <!-- Flow Origin Pulse / External Node -->
-  <circle cx="76" cy="182" r="5" fill="#38BDF8"/>
+  <!-- Origin Entry Pulse Node -->
+  <circle cx="58" cy="182" r="9" fill="#0284C7"/>
+  <circle cx="58" cy="182" r="4" fill="#FFFFFF"/>
 </svg>
