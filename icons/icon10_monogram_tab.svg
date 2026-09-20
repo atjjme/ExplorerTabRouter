@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="tabTLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#3730A3"/>
+    </linearGradient>
+    <linearGradient id="tabTRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="stemGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <filter id="glowT" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#3730A3" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#glowT)">
+    <!-- Base Outer Circular/Squircle Background Badge -->
+    <rect x="28" y="28" width="200" height="200" rx="52" fill="#0F172A" stroke="#1E293B" stroke-width="4"/>
+
+    <!-- The Geometric 'T' formed by Dual Tabs and Vertical Stem -->
+
+    <!-- Vertical Stem of the 'T' -->
+    <path d="M 112 110 L 144 110 L 144 198 C 144 206 138 212 130 212 L 126 212 C 118 212 112 206 112 198 Z"
+          fill="url(#stemGrad)"/>
+    
+    <!-- Central Flow/Pulse on Stem -->
+    <line x1="128" y1="126" x2="128" y2="190" stroke="#38BDF8" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="128" cy="190" r="4" fill="#FFFFFF"/>
+
+    <!-- Left Tab Wing (Forms left half of T top bar) -->
+    <path d="M 52 110 L 124 110 L 124 64 C 124 55 117 48 108 48 L 68 48 C 59 48 52 55 52 64 Z"
+          fill="url(#tabTLeft)"/>
+    <rect x="68" y="68" width="34" height="6" rx="3" fill="#A5B4FC"/>
+
+    <!-- Right Tab Wing (Forms right half of T top bar - Active/Glowing) -->
+    <path d="M 132 110 L 204 110 L 204 64 C 204 55 197 48 188 48 L 148 48 C 139 48 132 55 132 64 Z"
+          fill="url(#tabTRight)"/>
+    <rect x="146" y="68" width="34" height="6" rx="3" fill="#FFFFFF"/>
+    <!-- Notification/Active dot on top-right of active tab -->
+    <circle cx="192" cy="58" r="4" fill="#38BDF8"/>
+
+    <!-- Bottom Junction Bridge Line -->
+    <line x1="52" y1="110" x2="204" y2="110" stroke="#1E293B" stroke-width="2"/>
+  </g>
+</svg>

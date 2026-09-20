@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Window Stroke -->
+  <rect x="36" y="48" width="184" height="160" rx="28" 
+        fill="none" stroke="url(#lineGrad)" stroke-width="12" stroke-linejoin="round"/>
+
+  <!-- Tab Divider Horizontal Line -->
+  <line x1="36" y1="98" x2="220" y2="98" stroke="url(#lineGrad)" stroke-width="12"/>
+
+  <!-- Active Tab 1 Top Contour -->
+  <line x1="128" y1="48" x2="128" y2="98" stroke="url(#lineGrad)" stroke-width="12"/>
+
+  <!-- Tab 1 Inner dot / status -->
+  <circle cx="82" cy="73" r="10" fill="#38BDF8"/>
+
+  <!-- Tab 2 '+' symbol -->
+  <path d="M 174 65 L 174 81 M 166 73 L 182 73" 
+        stroke="#6366F1" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Elegant Continuous Route Path Inside Window -->
+  <!-- Curving from bottom-left up and looping to point to the active tab -->
+  <path d="M 72 170 C 72 136 106 128 140 128 C 172 128 184 148 184 168 C 184 186 166 192 144 192 C 114 192 108 174 108 152 L 108 120"
+        fill="none" stroke="url(#lineGrad)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Arrowhead at top pointing toward tab bar -->
+  <polygon points="108,106 98,124 118,124" fill="#38BDF8"/>
+</svg>
