@@ -9,18 +9,21 @@ namespace ExplorerTabRouter {
 
         [STAThread]
         public static void Main(string[] args) {
-            // 如果无参数启动
+            // 如果无参数启动（直接双击 exe）
             if (args == null || args.Length == 0) {
-                // 如果是从双击 exe 打开，且没有运行守护进程，则询问或启动守护进程
                 bool createdNew;
                 using (Mutex mutex = new Mutex(true, MUTEX_NAME, out createdNew)) {
                     if (createdNew) {
-                        // 启动托盘守护模式
+                        // 默认开机自启：若尚未配置自启动，自动注册当前程序为开机自启
+                        if (!RegistryHelper.IsAutoStartInstalled()) {
+                            RegistryHelper.InstallAutoStart(silent: false);
+                        }
+                        // 启动后台托盘守护模式
                         using (DaemonWatcher daemon = new DaemonWatcher()) {
-                            daemon.Start();
+                            daemon.Start(showTray: true);
                         }
                     } else {
-                        // 已经有守护进程在跑，打开一个新标签页
+                        // 已经有守护进程在跑，在当前窗口新建一个标签页
                         ExplorerManager.RouteOpen("");
                     }
                 }

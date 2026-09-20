@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 setlocal
 
@@ -8,7 +8,9 @@ echo ====================================================
 echo.
 
 :: 1. 检查可执行文件
-if exist "%~dp0..\bin\ExplorerTabRouter.exe" (
+if exist "%~dp0..\ExplorerTabRouter.exe" (
+    echo [可执行文件] 正常存在: %~dp0..\ExplorerTabRouter.exe
+) else if exist "%~dp0..\bin\ExplorerTabRouter.exe" (
     echo [可执行文件] 正常存在: %~dp0..\bin\ExplorerTabRouter.exe
 ) else (
     echo [可执行文件] 未找到，请先运行 build.bat 进行编译！

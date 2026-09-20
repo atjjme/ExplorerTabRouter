@@ -2,7 +2,11 @@
 chcp 65001 >nul
 setlocal
 
-for %%I in ("%~dp0..\bin\ExplorerTabRouter.exe") do set "EXE_PATH=%%~fI"
+if exist "%~dp0..\ExplorerTabRouter.exe" (
+    for %%I in ("%~dp0..\ExplorerTabRouter.exe") do set "EXE_PATH=%%~fI"
+) else (
+    for %%I in ("%~dp0..\bin\ExplorerTabRouter.exe") do set "EXE_PATH=%%~fI"
+)
 
 if not exist "%EXE_PATH%" (
     echo [提示] 尚未编译，正在自动编译 ExplorerTabRouter.exe ...
