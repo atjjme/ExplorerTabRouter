@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="loopGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="50%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#9333EA"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Window Frame -->
+  <rect x="36" y="44" width="184" height="168" rx="28"
+        fill="none" stroke="url(#loopGrad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Tab Dividing Line -->
+  <line x1="36" y1="96" x2="220" y2="96" stroke="url(#loopGrad)" stroke-width="12"/>
+
+  <!-- Tab Notch -->
+  <line x1="120" y1="44" x2="120" y2="96" stroke="url(#loopGrad)" stroke-width="12"/>
+
+  <!-- Tab 1 Indicator -->
+  <circle cx="78" cy="70" r="8" fill="#06B6D4"/>
+
+  <!-- Tab 2 Add/Routed Pill -->
+  <line x1="150" y1="70" x2="186" y2="70" stroke="#9333EA" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Infinity Loop Single Continuous Path -->
+  <!-- A graceful single loop inside the body that routes into the right tab -->
+  <path d="M 82 176 C 62 176 62 144 86 144 C 114 144 142 176 170 176 C 194 176 194 144 172 144 C 152 144 138 126 156 106"
+        fill="none" stroke="url(#loopGrad)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Arrow pointing to Tab 2 -->
+  <polygon points="164,98 146,112 166,118" fill="#9333EA"/>
+
+  <!-- Center Convergence Point -->
+  <circle cx="128" cy="160" r="5" fill="#3B82F6"/>
+</svg>
