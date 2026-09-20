@@ -144,7 +144,11 @@ namespace ExplorerTabRouter {
 
             _trayIcon = new NotifyIcon();
             _trayIcon.Text = "ExplorerTabRouter (标签路由助手)";
-            _trayIcon.Icon = SystemIcons.Application;
+            try {
+                _trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+            } catch {
+                _trayIcon.Icon = SystemIcons.Application;
+            }
             _trayIcon.ContextMenuStrip = _contextMenu;
             _trayIcon.Visible = true;
         }
