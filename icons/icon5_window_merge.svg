@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="fluentBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0078D4"/>
+      <stop offset="100%" stop-color="#005A9E"/>
+    </linearGradient>
+    <linearGradient id="accentCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00B4D8"/>
+      <stop offset="100%" stop-color="#0077B6"/>
+    </linearGradient>
+    <filter id="shadow5" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#003A66" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow5)">
+    <!-- Base Window Outer Card -->
+    <rect x="28" y="40" width="200" height="176" rx="24" fill="url(#fluentBlue)"/>
+
+    <!-- Top Tab Header Area -->
+    <path d="M 28 64 C 28 50.7 38.7 40 52 40 L 204 40 C 217.3 40 228 50.7 228 64 L 228 88 L 28 88 Z" fill="#005A9E"/>
+
+    <!-- Active Tab 1 (White / Light Background) -->
+    <path d="M 44 88 L 44 54 C 44 48.5 48.5 44 54 44 L 114 44 C 119.5 44 124 48.5 124 54 L 124 88 Z" fill="#FFFFFF"/>
+    <rect x="56" y="62" width="56" height="8" rx="4" fill="#0078D4"/>
+
+    <!-- Inactive Tab 2 (Translucent) -->
+    <path d="M 130 88 L 130 58 C 130 52.5 134.5 48 140 48 L 190 48 C 195.5 48 200 52.5 200 58 L 200 88 Z" fill="#FFFFFF" opacity="0.25"/>
+    <rect x="142" y="64" width="46" height="6" rx="3" fill="#FFFFFF" opacity="0.7"/>
+
+    <!-- Add '+' Tab button -->
+    <circle cx="212" cy="68" r="6" fill="#FFFFFF" opacity="0.4"/>
+    <path d="M 212 64 L 212 72 M 208 68 L 216 68" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- Window Inner Content Canvas -->
+    <rect x="42" y="100" width="172" height="102" rx="14" fill="#FFFFFF" opacity="0.12"/>
+
+    <!-- Convergence / Routing Arrows in Center (Merging into single window) -->
+    <g transform="translate(128, 151)">
+      <!-- Left Inward Arrow -->
+      <path d="M -54 0 L -14 0" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+      <path d="M -26 -12 L -14 0 L -26 12" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+
+      <!-- Center Convergence Node / Pill -->
+      <circle cx="0" cy="0" r="14" fill="#00B4D8"/>
+      <circle cx="0" cy="0" r="6" fill="#FFFFFF"/>
+
+      <!-- Right Inward Arrow -->
+      <path d="M 54 0 L 14 0" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+      <path d="M 26 -12 L 14 0 L 26 12" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Subtitle dots / Status Bar -->
+    <circle cx="56" cy="188" r="4" fill="#FFFFFF" opacity="0.5"/>
+    <circle cx="68" cy="188" r="4" fill="#FFFFFF" opacity="0.5"/>
+    <circle cx="80" cy="188" r="4" fill="#FFFFFF" opacity="0.5"/>
+  </g>
+</svg>

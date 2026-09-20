@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="tabBackGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#93C5FD"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="tabFrontGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1E40AF"/>
+    </linearGradient>
+    <filter id="stackShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1E3A8A" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#stackShadow)">
+    <!-- Back / Secondary Tab (Tilted or Shifted Top-Right) -->
+    <path d="M 88 56 L 194 56 C 206 56 216 66 216 78 L 216 172 C 216 184 206 194 194 194 L 88 194 C 76 194 66 184 66 172 L 66 78 C 66 66 76 56 88 56 Z"
+          fill="url(#tabBackGrad)" opacity="0.85"/>
+    
+    <!-- Header stripe for back tab -->
+    <path d="M 66 78 C 66 66 76 56 88 56 L 194 56 C 206 56 216 66 216 78 L 216 92 L 66 92 Z" fill="#60A5FA" opacity="0.6"/>
+    <circle cx="86" cy="74" r="5" fill="#DBEAFE"/>
+    <rect x="100" y="71" width="34" height="6" rx="3" fill="#DBEAFE"/>
+
+    <!-- Front / Primary Active Tab (Centered/Lower-Left) -->
+    <path d="M 52 82 L 170 82 C 183 82 194 93 194 106 L 194 206 C 194 219 183 230 170 230 L 52 230 C 39 230 28 219 28 206 L 28 106 C 28 93 39 82 52 82 Z"
+          fill="url(#tabFrontGrad)"/>
+
+    <!-- Tab Bar on Front Card -->
+    <!-- Tab Notch (Browser/Explorer tab shape) -->
+    <path d="M 44 82 L 108 82 C 114 82 118 86 120 92 L 124 114 L 36 114 L 38 92 C 40 86 42 82 44 82 Z" fill="#3B82F6"/>
+    <rect x="52" y="94" width="46" height="7" rx="3.5" fill="#FFFFFF"/>
+
+    <!-- Add New Tab symbol on tab bar -->
+    <path d="M 144 94 L 144 106 M 138 100 L 150 100" stroke="#93C5FD" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Front Tab Content: Clean Minimal File Folder Symbol -->
+    <g transform="translate(68, 138)">
+      <path d="M 6 12 C 6 8.7 8.7 6 12 6 L 32 6 C 35.5 6 38.5 8 40.5 11 L 46 18 L 74 18 C 77.3 18 80 20.7 80 24 L 80 58 C 80 61.3 77.3 64 74 64 L 12 64 C 8.7 64 6 61.3 6 58 Z" 
+            fill="#FFFFFF" opacity="0.95"/>
+      <path d="M 6 24 C 6 20.7 8.7 18 12 18 L 74 18 C 77.3 18 80 20.7 80 24 L 80 58 C 80 61.3 77.3 64 74 64 L 12 64 C 8.7 64 6 61.3 6 58 Z" 
+            fill="#60A5FA" opacity="0.3"/>
+    </g>
+
+    <!-- Glowing route dot badge -->
+    <circle cx="180" cy="94" r="14" fill="#38BDF8"/>
+    <circle cx="180" cy="94" r="7" fill="#FFFFFF"/>
+  </g>
+</svg>

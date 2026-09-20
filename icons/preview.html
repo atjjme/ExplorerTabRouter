@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExplorerTabRouter - 5套极简图标设计预览</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      padding: 40px 24px 80px;
+      line-height: 1.6;
+    }
+
+    header {
+      max-width: 1200px;
+      margin: 0 auto 40px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+
+    .subtitle {
+      color: var(--text-sub);
+      font-size: 1.1rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .grid {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 28px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .card-tag {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+    }
+
+    .card-title {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    /* Icon Display Stage */
+    .icon-stage {
+      background: radial-gradient(circle, #2a374a 0%, #151d2a 100%);
+      border-radius: 16px;
+      padding: 32px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      min-height: 220px;
+    }
+
+    .icon-stage img, .icon-stage object {
+      width: 150px;
+      height: 150px;
+      filter: drop-shadow(0 12px 20px rgba(0,0,0,0.35));
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .card:hover .icon-stage img {
+      transform: scale(1.08);
+    }
+
+    /* Multi-Size Scaling Strip */
+    .size-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      background: #0f172a;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      border: 1px solid #283548;
+    }
+
+    .size-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .size-item span {
+      font-size: 0.72rem;
+      color: var(--text-sub);
+    }
+
+    .size-item img {
+      image-rendering: -webkit-optimize-contrast;
+    }
+
+    /* Tray Simulation */
+    .tray-preview {
+      background: #181f2c;
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      font-size: 0.85rem;
+      border: 1px solid #232e3f;
+    }
+
+    .tray-label {
+      color: var(--text-sub);
+      font-size: 0.78rem;
+    }
+
+    .tray-mock {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .tray-item {
+      width: 18px;
+      height: 18px;
+      opacity: 0.9;
+    }
+
+    /* Description */
+    .desc-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 6px;
+    }
+
+    .desc-text {
+      color: var(--text-sub);
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+      flex-grow: 1;
+    }
+
+    .keywords {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: auto;
+    }
+
+    .chip {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #334155;
+      color: #cbd5e1;
+    }
+
+    /* Bottom Action Bar */
+    .footer-actions {
+      max-width: 1200px;
+      margin: 50px auto 0;
+      text-align: center;
+      padding: 28px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+    }
+
+    .footer-actions p {
+      color: var(--text-sub);
+      margin-bottom: 16px;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 10px 22px;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>ExplorerTabRouter 图标设计提案</h1>
+    <p class="subtitle">5套符合 Windows 11 Fluent 现代简约风格的矢量图标设计方案，专为单窗口标签路由与系统托盘优化。</p>
+  </header>
+
+  <main class="grid">
+
+    <!-- 方案 1 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">1. 多标签文件夹</h2>
+        <span class="card-tag">直观识别</span>
+      </div>
+      <div class="icon-stage">
+        <img src="icon1_folder_tabs.svg" alt="方案1 多标签文件夹">
+      </div>
+      <div class="size-strip">
+        <div class="size-item">
+          <img src="icon1_folder_tabs.svg" width="48" height="48" alt="48px">
+          <span>48px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon1_folder_tabs.svg" width="32" height="32" alt="32px">
+          <span>32px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon1_folder_tabs.svg" width="24" height="24" alt="24px">
+          <span>24px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon1_folder_tabs.svg" width="16" height="16" alt="16px">
+          <span>16px</span>
+        </div>
+      </div>
+      <div class="tray-preview">
+        <span class="tray-label">托盘效果模拟</span>
+        <div class="tray-mock">
+          <img src="icon1_folder_tabs.svg" class="tray-item" alt="tray">
+          <span style="color:#64748b; font-size:12px;">🔊 📶 10:30</span>
+        </div>
+      </div>
+      <div class="desc-title">设计理念</div>
+      <p class="desc-text">以 Windows 11 经典现代圆角文件夹为主体，顶部直观排列双标签（Tabs）及"+"号。一眼即可识别“资源管理器多标签页”属性，亲和力最高、认知成本最低。</p>
+      <div class="keywords">
+        <span class="chip">Fluent 蓝</span>
+        <span class="chip">文件夹</span>
+        <span class="chip">双标签页</span>
+        <span class="chip">高辨识度</span>
+      </div>
+    </div>
+
+    <!-- 方案 2 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">2. 路由归流箭头</h2>
+        <span class="card-tag">动势表达</span>
+      </div>
+      <div class="icon-stage">
+        <img src="icon2_route_arrow.svg" alt="方案2 路由归流箭头">
+      </div>
+      <div class="size-strip">
+        <div class="size-item">
+          <img src="icon2_route_arrow.svg" width="48" height="48" alt="48px">
+          <span>48px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon2_route_arrow.svg" width="32" height="32" alt="32px">
+          <span>32px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon2_route_arrow.svg" width="24" height="24" alt="24px">
+          <span>24px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon2_route_arrow.svg" width="16" height="16" alt="16px">
+          <span>16px</span>
+        </div>
+      </div>
+      <div class="tray-preview">
+        <span class="tray-label">托盘效果模拟</span>
+        <div class="tray-mock">
+          <img src="icon2_route_arrow.svg" class="tray-item" alt="tray">
+          <span style="color:#64748b; font-size:12px;">🔊 📶 10:30</span>
+        </div>
+      </div>
+      <div class="desc-title">设计理念</div>
+      <p class="desc-text">采用极简浅底窗口框架，左下角的外部文件打开请求化作一条流畅优美的弧线箭头，精准路由注入到窗口新标签中，生动诠释“路由与捕获合并”的动态过程。</p>
+      <div class="keywords">
+        <span class="chip">极简窗口</span>
+        <span class="chip">流动轨迹</span>
+        <span class="chip">穿透路由</span>
+        <span class="chip">动静结合</span>
+      </div>
+    </div>
+
+    <!-- 方案 3 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">3. 叠层多标签</h2>
+        <span class="card-tag">极简高级</span>
+      </div>
+      <div class="icon-stage">
+        <img src="icon3_stacked_tabs.svg" alt="方案3 叠层多标签">
+      </div>
+      <div class="size-strip">
+        <div class="size-item">
+          <img src="icon3_stacked_tabs.svg" width="48" height="48" alt="48px">
+          <span>48px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon3_stacked_tabs.svg" width="32" height="32" alt="32px">
+          <span>32px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon3_stacked_tabs.svg" width="24" height="24" alt="24px">
+          <span>24px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon3_stacked_tabs.svg" width="16" height="16" alt="16px">
+          <span>16px</span>
+        </div>
+      </div>
+      <div class="tray-preview">
+        <span class="tray-label">托盘效果模拟</span>
+        <div class="tray-mock">
+          <img src="icon3_stacked_tabs.svg" class="tray-item" alt="tray">
+          <span style="color:#64748b; font-size:12px;">🔊 📶 10:30</span>
+        </div>
+      </div>
+      <div class="desc-title">设计理念</div>
+      <p class="desc-text">深浅蓝叠层卡片结构，前层为主标签，后层为副标签，辅以呼吸感光斑。纯色块结构，无冗余杂线，在 16x16 与 32x32 极小尺寸下轮廓分明，极耐看。</p>
+      <div class="keywords">
+        <span class="chip">多层重叠</span>
+        <span class="chip">极简色块</span>
+        <span class="chip">超小尺寸优化</span>
+        <span class="chip">沉稳优雅</span>
+      </div>
+    </div>
+
+    <!-- 方案 4 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">4. 标签条与路由节点</h2>
+        <span class="card-tag">极客科技</span>
+      </div>
+      <div class="icon-stage">
+        <img src="icon4_routing_nodes.svg" alt="方案4 标签条与路由节点">
+      </div>
+      <div class="size-strip">
+        <div class="size-item">
+          <img src="icon4_routing_nodes.svg" width="48" height="48" alt="48px">
+          <span>48px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon4_routing_nodes.svg" width="32" height="32" alt="32px">
+          <span>32px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon4_routing_nodes.svg" width="24" height="24" alt="24px">
+          <span>24px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon4_routing_nodes.svg" width="16" height="16" alt="16px">
+          <span>16px</span>
+        </div>
+      </div>
+      <div class="tray-preview">
+        <span class="tray-label">托盘效果模拟</span>
+        <div class="tray-mock">
+          <img src="icon4_routing_nodes.svg" class="tray-item" alt="tray">
+          <span style="color:#64748b; font-size:12px;">🔊 📶 10:30</span>
+        </div>
+      </div>
+      <div class="desc-title">设计理念</div>
+      <p class="desc-text">以网络路由器与代码分支合并为灵感，外部多个调用源经由中继核心汇聚并向上导向目标标签。深色圆角方块背景搭配青蓝荧光，极客科技感强烈。</p>
+      <div class="keywords">
+        <span class="chip">深色极客</span>
+        <span class="chip">网络/分支汇聚</span>
+        <span class="chip">Router 隐喻</span>
+        <span class="chip">荧光青蓝</span>
+      </div>
+    </div>
+
+    <!-- 方案 5 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">5. 单窗口极简聚合</h2>
+        <span class="card-tag">聚焦合一</span>
+      </div>
+      <div class="icon-stage">
+        <img src="icon5_window_merge.svg" alt="方案5 单窗口极简聚合">
+      </div>
+      <div class="size-strip">
+        <div class="size-item">
+          <img src="icon5_window_merge.svg" width="48" height="48" alt="48px">
+          <span>48px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon5_window_merge.svg" width="32" height="32" alt="32px">
+          <span>32px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon5_window_merge.svg" width="24" height="24" alt="24px">
+          <span>24px</span>
+        </div>
+        <div class="size-item">
+          <img src="icon5_window_merge.svg" width="16" height="16" alt="16px">
+          <span>16px</span>
+        </div>
+      </div>
+      <div class="tray-preview">
+        <span class="tray-label">托盘效果模拟</span>
+        <div class="tray-mock">
+          <img src="icon5_window_merge.svg" class="tray-item" alt="tray">
+          <span style="color:#64748b; font-size:12px;">🔊 📶 10:30</span>
+        </div>
+      </div>
+      <div class="desc-title">设计理念</div>
+      <p class="desc-text">经典的纯色圆角窗口外框与双标签栏，中央设计了一组对称向内汇拢的极简合流箭头。寓意“将外部散落在各处的独立窗口收束为一个单窗口”，纯粹利落。</p>
+      <div class="keywords">
+        <span class="chip">经典 Windows 蓝</span>
+        <span class="chip">向内汇聚</span>
+        <span class="chip">整齐纯粹</span>
+        <span class="chip">单窗口概念</span>
+      </div>
+    </div>
+
+  </main>
+
+  <div class="footer-actions">
+    <p>所有图标已以标准矢量 SVG 文件格式保存在 <code>icons/</code> 目录下，支持无损任意尺寸放大与转换为 Windows <code>.ico</code> 格式。</p>
+    <span style="color:#38bdf8; font-weight:600;">您可以在这 5 款中挑选您最心仪的方案，随时为您将其编译嵌入到 ExplorerTabRouter.exe 中！</span>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="neonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#06B6D4" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Squircle -->
+  <rect x="24" y="24" width="208" height="208" rx="48" fill="url(#bgGrad)" stroke="#334155" stroke-width="4"/>
+
+  <!-- Top Minimalist Tab Bar -->
+  <g transform="translate(48, 52)">
+    <!-- Tab Container Outline -->
+    <rect x="0" y="0" width="160" height="42" rx="12" fill="#1E293B" stroke="#334155" stroke-width="2"/>
+    
+    <!-- Tab 1 (Base Tab) -->
+    <rect x="6" y="6" width="68" height="30" rx="8" fill="#334155"/>
+    <rect x="18" y="18" width="40" height="6" rx="3" fill="#94A3B8"/>
+    
+    <!-- Tab 2 (Routed Target Tab, Glowing / Highlighted) -->
+    <rect x="80" y="6" width="74" height="30" rx="8" fill="url(#neonGrad)" filter="url(#glow)"/>
+    <rect x="94" y="18" width="38" height="6" rx="3" fill="#FFFFFF"/>
+    <circle cx="142" cy="21" r="3" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Routing Network / Convergence Flow Lines -->
+  <!-- External incoming nodes converging to Tab 2 -->
+  <!-- Left Entry Node 1 (Top Left) -->
+  <circle cx="64" cy="144" r="8" fill="#64748B"/>
+  <circle cx="64" cy="144" r="4" fill="#94A3B8"/>
+
+  <!-- Left Entry Node 2 (Bottom Left) -->
+  <circle cx="64" cy="188" r="8" fill="#64748B"/>
+  <circle cx="64" cy="188" r="4" fill="#94A3B8"/>
+
+  <!-- Hub / Router Junction Central Node -->
+  <circle cx="118" cy="166" r="11" fill="#0284C7"/>
+  <circle cx="118" cy="166" r="5" fill="#38BDF8"/>
+
+  <!-- Converging paths from sources to router junction -->
+  <path d="M 72 144 C 92 144 98 166 110 166" fill="none" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+  <path d="M 72 188 C 92 188 98 166 110 166" fill="none" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Direct Route upward to the 2nd Tab -->
+  <path d="M 126 166 C 152 166 165 130 165 98" fill="none" stroke="url(#neonGrad)" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Upward arrow indicator pointing directly into Tab 2 -->
+  <polygon points="165,92 159,104 171,104" fill="#06B6D4"/>
+
+  <!-- Router Core Accent Lines -->
+  <line x1="48" y1="112" x2="208" y2="112" stroke="#334155" stroke-width="1.5" stroke-dasharray="4 4"/>
+</svg>

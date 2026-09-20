@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="winGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="routeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+    <linearGradient id="arrowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <filter id="winShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#winShadow)">
+    <!-- Main Window Background -->
+    <rect x="28" y="44" width="200" height="168" rx="20" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="4"/>
+
+    <!-- Window Title / Tab Bar Background -->
+    <path d="M 30 64 C 30 52.9 39 44 50 44 L 206 44 C 217 44 226 52.9 226 64 L 226 96 L 30 96 Z" fill="#F1F5F9"/>
+
+    <!-- Tab 1: Existing Tab (Inactive/Normal) -->
+    <path d="M 44 96 L 44 62 C 44 56.5 48.5 52 54 52 L 102 52 C 107.5 52 112 56.5 112 62 L 112 96 Z" fill="#CBD5E1"/>
+    <rect x="56" y="70" width="44" height="6" rx="3" fill="#64748B"/>
+
+    <!-- Tab 2: Target Routed Tab (Active Highlighted) -->
+    <path d="M 116 96 L 116 58 C 116 52.5 120.5 48 126 48 L 184 48 C 189.5 48 194 52.5 194 58 L 194 96 Z" fill="#0284C7"/>
+    <rect x="130" y="68" width="38" height="6" rx="3" fill="#FFFFFF"/>
+
+    <!-- Window Body Minimal Grid/Lines -->
+    <rect x="52" y="116" width="64" height="38" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="3"/>
+    <rect x="126" y="116" width="78" height="16" rx="4" fill="#F1F5F9"/>
+    <rect x="126" y="138" width="56" height="12" rx="4" fill="#F1F5F9"/>
+
+    <!-- Routing Dynamic Flow Path -->
+    <!-- Incoming Flow Line from Outside/Bottom-Left curving gracefully up to Tab 2 -->
+    <path d="M 46 218 C 46 165 96 110 148 100" 
+          fill="none" stroke="#E2E8F0" stroke-width="14" stroke-linecap="round"/>
+    <path d="M 46 218 C 46 165 96 110 148 100" 
+          fill="none" stroke="url(#routeGrad)" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- Source origin dot (representing external open trigger) -->
+    <circle cx="46" cy="218" r="10" fill="#0284C7"/>
+    <circle cx="46" cy="218" r="5" fill="#FFFFFF"/>
+
+    <!-- Target Arrowhead pointing directly into Tab 2 -->
+    <polygon points="155,90 162,108 142,104" fill="#0284C7"/>
+
+    <!-- Routing Pulse Badge -->
+    <circle cx="152" cy="71" r="5" fill="#38BDF8"/>
+  </g>
+</svg>
