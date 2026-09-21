@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows.Automation;
 
 namespace ExplorerTabRouter {
     public static class ExplorerManager {
@@ -152,7 +153,11 @@ namespace ExplorerTabRouter {
                         if (hwnd == (long)cabinet) {
                             string url = (string)w.LocationURL;
                             if (IsPathMatch(targetPath, url)) {
-                                Win32.PostMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_SWITCH_TAB, (IntPtr)(tabIndex + 1));
+                                string locName = null;
+                                try { locName = (string)w.LocationName; } catch {}
+
+                                // 通过 UI Automation 真正选中并激活该 Tab 页面
+                                SwitchTabViaUIAutomation(cabinet, tabIndex, targetPath, locName);
                                 return true;
                             }
                             tabIndex++;
@@ -161,6 +166,81 @@ namespace ExplorerTabRouter {
                     }
                 }
             } catch {
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 通过 UI Automation 查找并激活目标 Tab 标签
+        /// </summary>
+        public static bool SwitchTabViaUIAutomation(IntPtr cabinet, int tabIndex, string targetPath, string locationName = null) {
+            try {
+                AutomationElement cabinetEl = AutomationElement.FromHandle(cabinet);
+                if (cabinetEl == null) return false;
+
+                Condition tabCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem);
+                AutomationElementCollection tabItems = cabinetEl.FindAll(TreeScope.Descendants, tabCondition);
+                if (tabItems == null || tabItems.Count == 0) return false;
+
+                AutomationElement targetTab = null;
+
+                // 1. 优先通过 Shell 对象的 LocationName 精准比对 TabItem.Current.Name
+                if (!string.IsNullOrEmpty(locationName)) {
+                    for (int i = 0; i < tabItems.Count; i++) {
+                        try {
+                            string name = tabItems[i].Current.Name;
+                            if (!string.IsNullOrEmpty(name) &&
+                                (name.Equals(locationName, StringComparison.OrdinalIgnoreCase) ||
+                                 name.IndexOf(locationName, StringComparison.OrdinalIgnoreCase) >= 0)) {
+                                targetTab = tabItems[i];
+                                break;
+                            }
+                        } catch {}
+                    }
+                }
+
+                // 2. 其次通过路径的文件夹名称比对
+                if (targetTab == null && !string.IsNullOrEmpty(targetPath)) {
+                    string folderName = string.Empty;
+                    try {
+                        string norm = NormalizePath(targetPath).TrimEnd('\\', '/');
+                        folderName = Path.GetFileName(norm);
+                        if (string.IsNullOrEmpty(folderName)) folderName = norm;
+                    } catch {}
+
+                    if (!string.IsNullOrEmpty(folderName)) {
+                        for (int i = 0; i < tabItems.Count; i++) {
+                            try {
+                                string name = tabItems[i].Current.Name;
+                                if (!string.IsNullOrEmpty(name) &&
+                                    (name.Equals(folderName, StringComparison.OrdinalIgnoreCase) ||
+                                     name.IndexOf(folderName, StringComparison.OrdinalIgnoreCase) >= 0)) {
+                                    targetTab = tabItems[i];
+                                    break;
+                                }
+                            } catch {}
+                        }
+                    }
+                }
+
+                // 3. 兜底使用在 Cabinet 中的相对序号索引
+                if (targetTab == null && tabIndex >= 0 && tabIndex < tabItems.Count) {
+                    targetTab = tabItems[tabIndex];
+                }
+
+                if (targetTab != null) {
+                    object patternObj;
+                    if (targetTab.TryGetCurrentPattern(SelectionItemPattern.Pattern, out patternObj)) {
+                        ((SelectionItemPattern)patternObj).Select();
+                        return true;
+                    }
+                    if (targetTab.TryGetCurrentPattern(InvokePattern.Pattern, out patternObj)) {
+                        ((InvokePattern)patternObj).Invoke();
+                        return true;
+                    }
+                }
+            } catch (Exception ex) {
+                Trace.WriteLine("SwitchTabViaUIAutomation error: " + ex.Message);
             }
             return false;
         }

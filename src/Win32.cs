@@ -133,6 +133,14 @@ namespace ExplorerTabRouter {
         [DllImport("user32.dll")]
         public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
+        [DllImport("user32.dll")]
+        public static extern bool BringWindowToTop(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+        public const uint KEYEVENTF_KEYUP = 0x0002;
+
         [DllImport("kernel32.dll")]
         public static extern uint GetCurrentThreadId();
 
@@ -248,11 +256,15 @@ namespace ExplorerTabRouter {
             public void Dispose() {}
         }
 
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+        private static readonly IntPtr HWND_TOP = new IntPtr(0);
+
         /// <summary>
-        /// 强行将窗口置前激活（突破 Windows 限制）
+        /// 强行将窗口置前激活（突破 Windows 限制，彻底消除任务栏呼吸灯拦截）
         /// </summary>
         public static void ForceForegroundWindow(IntPtr hWnd) {
-            if (hWnd == IntPtr.Zero) return;
+            if (hWnd == IntPtr.Zero || !IsWindow(hWnd)) return;
 
             if (IsIconic(hWnd)) {
                 ShowWindow(hWnd, SW_RESTORE);
@@ -261,20 +273,45 @@ namespace ExplorerTabRouter {
             }
 
             IntPtr foreHwnd = GetForegroundWindow();
-            if (foreHwnd == hWnd) return;
+            if (foreHwnd == hWnd) {
+                BringWindowToTop(hWnd);
+                return;
+            }
 
             uint currentThread = GetCurrentThreadId();
             uint foreThread = 0;
             if (foreHwnd != IntPtr.Zero) {
                 GetWindowThreadProcessId(foreHwnd, out foreThread);
             }
+            uint targetThread = 0;
+            GetWindowThreadProcessId(hWnd, out targetThread);
 
-            if (foreThread != 0 && foreThread != currentThread) {
-                AttachThreadInput(currentThread, foreThread, true);
+            // 模拟触发 Alt 键按键弹起，重置系统前台锁定计时器（打破呼吸灯限制）
+            keybd_event((byte)VK_MENU, 0, 0, UIntPtr.Zero);
+            keybd_event((byte)VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+            bool attachedFore = false;
+            bool attachedTarget = false;
+            try {
+                if (foreThread != 0 && foreThread != currentThread) {
+                    attachedFore = AttachThreadInput(currentThread, foreThread, true);
+                }
+                if (targetThread != 0 && targetThread != currentThread && targetThread != foreThread) {
+                    attachedTarget = AttachThreadInput(currentThread, targetThread, true);
+                }
+
+                BringWindowToTop(hWnd);
                 SetForegroundWindow(hWnd);
-                AttachThreadInput(currentThread, foreThread, false);
-            } else {
+
+                // 通过快速 TOPMOST -> NOTOPMOST 刷新窗口 Z-Order，确保必居最前
+                SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetWindowPos(hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+
                 SetForegroundWindow(hWnd);
+            } finally {
+                if (attachedFore) AttachThreadInput(currentThread, foreThread, false);
+                if (attachedTarget) AttachThreadInput(currentThread, targetThread, false);
             }
         }
 
