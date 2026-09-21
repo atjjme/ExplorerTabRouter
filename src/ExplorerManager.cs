@@ -87,11 +87,7 @@ namespace ExplorerTabRouter {
                 dynamic windows = currentShell.Windows();
                 int initialCount = windows.Count;
 
-                // 2. 异步快速发送新建标签命令 (0xA21B / Ctrl+T)，不阻塞当前线程
-                IntPtr tabWindow = Win32.FindWindowEx(cabinet, IntPtr.Zero, "ShellTabWindowClass", null);
-                if (tabWindow != IntPtr.Zero) {
-                    Win32.PostMessage(tabWindow, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
-                }
+                // 2. 异步快速发送新建标签命令 (0xA21B / Ctrl+T)，仅发送一次
                 Win32.PostMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
 
                 // 立即将宿主窗口置前并激活，给予用户即时反馈
