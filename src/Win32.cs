@@ -33,10 +33,13 @@ namespace ExplorerTabRouter {
 
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_LAYERED = 0x80000;
+        public const int WS_EX_TOOLWINDOW = 0x00000080;
+        public const int WS_EX_APPWINDOW = 0x00040000;
         public const uint LWA_ALPHA = 0x2;
 
         public const uint EVENT_OBJECT_CREATE = 0x8000;
         public const uint EVENT_OBJECT_SHOW = 0x8002;
+        public const uint EVENT_OBJECT_DESTROY = 0x8001;
         public const uint WINEVENT_OUTOFCONTEXT = 0;
         public const uint WINEVENT_SKIPOWNPROCESS = 2;
 
@@ -44,12 +47,14 @@ namespace ExplorerTabRouter {
         public const int VK_CONTROL = 0x11;
         public const int VK_MENU = 0x12;
         public const int VK_LBUTTON = 0x01;
+        public const int VK_MBUTTON = 0x04;
         public const int VK_T = 0x54;
         public const int VK_W = 0x57;
 
         public const int WH_MOUSE_LL = 14;
         public const int WH_KEYBOARD_LL = 13;
         public const int WM_LBUTTONDOWN = 0x0201;
+        public const int WM_MBUTTONDOWN = 0x0207;
         public const int WM_KEYDOWN = 0x0100;
         public const int WM_SYSKEYDOWN = 0x0104;
 
@@ -213,15 +218,59 @@ namespace ExplorerTabRouter {
             return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong));
         }
 
+        [ComImport]
+        [Guid("56FDF342-FD6D-11d0-958A-006097C9A090")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface ITaskbarList {
+            [PreserveSig] int HrInit();
+            [PreserveSig] int AddTab(IntPtr hWnd);
+            [PreserveSig] int DeleteTab(IntPtr hWnd);
+            [PreserveSig] int ActivateTab(IntPtr hWnd);
+            [PreserveSig] int SetActiveAlt(IntPtr hWnd);
+        }
+
+        private static ITaskbarList _taskbarList;
+        private static readonly object _taskbarLock = new object();
+
+        public static void RemoveFromTaskbar(IntPtr hWnd) {
+            if (hWnd == IntPtr.Zero) return;
+            try {
+                if (_taskbarList == null) {
+                    lock (_taskbarLock) {
+                        if (_taskbarList == null) {
+                            Type t = Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090"));
+                            if (t != null) {
+                                _taskbarList = (ITaskbarList)Activator.CreateInstance(t);
+                                _taskbarList.HrInit();
+                            }
+                        }
+                    }
+                }
+                if (_taskbarList != null) {
+                    _taskbarList.DeleteTab(hWnd);
+                }
+            } catch {}
+        }
+
         /// <summary>
-        /// 瞬间将窗口置于完全透明并移动到屏幕外，彻底消除新窗口弹出的闪烁感
+        /// 瞬间将窗口置于完全透明、从任务栏移除并移动到屏幕外，彻底消除新窗口弹出与任务栏图标闪烁/融合感
         /// </summary>
         public static void MakeWindowInvisibleOffscreen(IntPtr hWnd) {
+            if (hWnd == IntPtr.Zero) return;
             try {
+                // 1. 设置 ToolWindow 并剥离 AppWindow 样式（通知系统绝不为其分配任务栏按钮）
                 int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
-                SetWindowLong(hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-                SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA); // 0% 不透明度 (完全不可见)
-                SetWindowPos(hWnd, IntPtr.Zero, -32000, -32000, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                SetWindowLong(hWnd, GWL_EXSTYLE, (exStyle | WS_EX_LAYERED | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW);
+
+                // 2. 从任务栏直接删除该窗口项
+                RemoveFromTaskbar(hWnd);
+
+                // 3. 隐藏并置为 0% 透明度 (完全不可见)
+                ShowWindow(hWnd, SW_HIDE);
+                SetLayeredWindowAttributes(hWnd, 0, 0, LWA_ALPHA);
+
+                // 4. 移出屏幕物理渲染区域
+                SetWindowPos(hWnd, IntPtr.Zero, -32000, -32000, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
             } catch {}
         }
 

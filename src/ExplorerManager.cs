@@ -89,8 +89,10 @@ namespace ExplorerTabRouter {
 
                 // 2. 异步快速发送新建标签命令 (0xA21B / Ctrl+T)，不阻塞当前线程
                 IntPtr tabWindow = Win32.FindWindowEx(cabinet, IntPtr.Zero, "ShellTabWindowClass", null);
-                IntPtr msgTarget = tabWindow != IntPtr.Zero ? tabWindow : cabinet;
-                Win32.PostMessage(msgTarget, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
+                if (tabWindow != IntPtr.Zero) {
+                    Win32.PostMessage(tabWindow, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
+                }
+                Win32.PostMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
 
                 // 立即将宿主窗口置前并激活，给予用户即时反馈
                 Win32.ForceForegroundWindow(cabinet);
@@ -115,7 +117,7 @@ namespace ExplorerTabRouter {
                     int curCount = windows.Count;
 
                     if (curCount > initialCount) {
-                        for (int i = initialCount; i < curCount; i++) {
+                        for (int i = curCount - 1; i >= initialCount; i--) {
                             try {
                                 dynamic w = windows.Item(i);
                                 if (w != null) {
@@ -179,6 +181,10 @@ namespace ExplorerTabRouter {
                 }
             }
 
+            if (string.Equals(targetPath.Trim(), url.Trim(), StringComparison.OrdinalIgnoreCase)) {
+                return true;
+            }
+
             return false;
         }
 
@@ -220,6 +226,11 @@ namespace ExplorerTabRouter {
 
             string s = raw.Trim('\"', '\'', ' ');
             if (string.IsNullOrEmpty(s)) return string.Empty;
+
+            if (s.StartsWith("::{", StringComparison.OrdinalIgnoreCase) ||
+                s.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)) {
+                return s;
+            }
 
             try {
                 s = Environment.ExpandEnvironmentVariables(s);
