@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows.Automation;
 using System.Windows.Forms;
 
 namespace ExplorerTabRouter {
@@ -20,6 +21,16 @@ namespace ExplorerTabRouter {
         private readonly object _lock = new object();
         private bool _isPaused = false;
         private dynamic _shell;
+
+        // 双击标签关闭 & 快捷键恢复
+        private Win32.HookProc _mouseHookProc;
+        private Win32.HookProc _kbHookProc;
+        private IntPtr _mouseHookId = IntPtr.Zero;
+        private IntPtr _kbHookId = IntPtr.Zero;
+        private uint _lastLDownTime = 0;
+        private Win32.POINT _lastLDownPt;
+        private bool _enableDoubleClickClose = true;
+        private bool _enableRestoreTabShortcut = true;
 
         private dynamic GetShell() {
             try {
@@ -59,6 +70,13 @@ namespace ExplorerTabRouter {
                 Win32.WINEVENT_OUTOFCONTEXT | Win32.WINEVENT_SKIPOWNPROCESS
             );
 
+            // 注册低级鼠标与键盘钩子
+            _mouseHookProc = new Win32.HookProc(OnMouseHook);
+            _kbHookProc = new Win32.HookProc(OnKeyboardHook);
+            IntPtr hMod = Marshal.GetHINSTANCE(typeof(Program).Module);
+            _mouseHookId = Win32.SetWindowsHookEx(Win32.WH_MOUSE_LL, _mouseHookProc, hMod, 0);
+            _kbHookId = Win32.SetWindowsHookEx(Win32.WH_KEYBOARD_LL, _kbHookProc, hMod, 0);
+
             Application.Run();
         }
 
@@ -80,6 +98,22 @@ namespace ExplorerTabRouter {
             pauseItem.Checked = !_isPaused;
             _contextMenu.Items.Add(pauseItem);
 
+            // 双击标签关闭开关
+            ToolStripMenuItem dblCloseItem = new ToolStripMenuItem("启用双击关闭标签页", null, (s, e) => {
+                _enableDoubleClickClose = !_enableDoubleClickClose;
+                ((ToolStripMenuItem)s).Checked = _enableDoubleClickClose;
+            });
+            dblCloseItem.Checked = _enableDoubleClickClose;
+            _contextMenu.Items.Add(dblCloseItem);
+
+            // 快捷键恢复标签页开关
+            ToolStripMenuItem restoreTabItem = new ToolStripMenuItem("启用恢复标签页快捷键 (Ctrl+Shift+T)", null, (s, e) => {
+                _enableRestoreTabShortcut = !_enableRestoreTabShortcut;
+                ((ToolStripMenuItem)s).Checked = _enableRestoreTabShortcut;
+            });
+            restoreTabItem.Checked = _enableRestoreTabShortcut;
+            _contextMenu.Items.Add(restoreTabItem);
+
             // 自动清理可能存在的历史遗留注册表关联，确保内部浏览绝不被误伤
             RegistryHelper.CleanupLegacyFolderAssociation();
 
@@ -99,6 +133,15 @@ namespace ExplorerTabRouter {
 
             _contextMenu.Items.Add(new ToolStripSeparator());
 
+            // 快捷操作：恢复刚刚关闭的标签
+            _contextMenu.Items.Add("恢复刚刚关闭的标签 (Ctrl+Shift+T)", null, (s, e) => {
+                ThreadPool.QueueUserWorkItem(_ => {
+                    using (Win32.AttachToInteractiveDesktop()) {
+                        TabTracker.RestoreLastClosedTab();
+                    }
+                });
+            });
+
             // 快捷操作：当前窗口新建标签
             _contextMenu.Items.Add("在当前窗口新建标签 (Ctrl+T)", null, (s, e) => {
                 List<IntPtr> cabs = Win32.GetAllCabinetWindows();
@@ -114,9 +157,11 @@ namespace ExplorerTabRouter {
                 string msg = "ExplorerTabRouter (资源管理器标签路由助手)\n\n" +
                              "功能特性：\n" +
                              "1. 外部打开文件夹时，自动在已有资源管理器窗口的标签页打开。\n" +
-                             "2. 原生支持标签撕脱（Tab Tear-off）：手动从窗口拖出标签拆分完全不受影响！\n" +
-                             "3. 强制新窗口技巧：按住 Ctrl + Shift 打开文件夹可强制以全新独立窗口打开。\n" +
-                             "4. 智能去重：若目标文件夹已在某标签页打开，自动切换过去，不重复开启。\n\n" +
+                             "2. 支持双击标签页快速关闭当前标签（双击空白处仍保留最大化/还原）。\n" +
+                             "3. 支持快捷键 Ctrl + Shift + T 瞬间恢复刚刚关闭的标签页！\n" +
+                             "4. 原生支持标签撕脱（Tab Tear-off）：手动从窗口拖出标签拆分完全不受影响！\n" +
+                             "5. 强制新窗口技巧：按住 Ctrl + Shift 打开文件夹可强制以全新独立窗口打开。\n" +
+                             "6. 智能去重：若目标文件夹已在某标签页打开，自动切换过去，不重复开启。\n\n" +
                              "绿色免安装，随时可在本菜单或脚本中一键还原。";
                 MessageBox.Show(msg, "关于 ExplorerTabRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             });
@@ -130,7 +175,8 @@ namespace ExplorerTabRouter {
             });
 
             _trayIcon = new NotifyIcon();
-            _trayIcon.Text = "ExplorerTabRouter (标签路由助手)";
+            // 鼠标悬停只显示软件名称
+            _trayIcon.Text = "ExplorerTabRouter";
             try {
                 _trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
             } catch {
@@ -138,6 +184,151 @@ namespace ExplorerTabRouter {
             }
             _trayIcon.ContextMenuStrip = _contextMenu;
             _trayIcon.Visible = true;
+        }
+
+        private IntPtr OnMouseHook(int nCode, IntPtr wParam, IntPtr lParam) {
+            if (nCode >= 0 && wParam == (IntPtr)Win32.WM_LBUTTONDOWN && _enableDoubleClickClose) {
+                try {
+                    Win32.MSLLHOOKSTRUCT ms = (Win32.MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(Win32.MSLLHOOKSTRUCT));
+                    uint now = (uint)Environment.TickCount;
+                    uint dbTime = Win32.GetDoubleClickTime();
+                    int cx = Math.Max(Win32.GetSystemMetrics(Win32.SM_CXDOUBLECLK) * 3, 25);
+                    int cy = Math.Max(Win32.GetSystemMetrics(Win32.SM_CYDOUBLECLK) * 3, 20);
+
+                    bool isDbl = (_lastLDownTime != 0) &&
+                                 (now >= _lastLDownTime) &&
+                                 (now - _lastLDownTime <= dbTime) &&
+                                 Math.Abs(ms.pt.x - _lastLDownPt.x) <= cx &&
+                                 Math.Abs(ms.pt.y - _lastLDownPt.y) <= cy;
+
+                    _lastLDownTime = now;
+                    _lastLDownPt = ms.pt;
+
+                    if (isDbl) {
+                        _lastLDownTime = 0; // 防止三击再次触发
+
+                        IntPtr wnd = Win32.WindowFromPoint(ms.pt);
+                        IntPtr root = Win32.GetAncestor(wnd, Win32.GA_ROOT);
+                        if (root == IntPtr.Zero) root = wnd;
+
+                        string cls = root != IntPtr.Zero ? Win32.GetWindowClassName(root) : "";
+                        if (cls == "CabinetWClass") {
+                            Win32.RECT r;
+                            Win32.GetWindowRect(root, out r);
+
+                            // 检查 Y 是否在顶部标签栏垂直范围（窗口顶部向下 90 像素内，适配高DPI）
+                            if (ms.pt.y >= r.Top && ms.pt.y <= r.Top + 90) {
+                                Win32.POINT clickPt = ms.pt;
+                                IntPtr cabinetHwnd = root;
+                                ThreadPool.QueueUserWorkItem(_ => {
+                                    HandleTabDoubleClick(cabinetHwnd, clickPt);
+                                });
+                            }
+                        }
+                    }
+                } catch {}
+            }
+            return Win32.CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
+        }
+
+        private void HandleTabDoubleClick(IntPtr cabinet, Win32.POINT pt) {
+            try {
+                using (Win32.AttachToInteractiveDesktop()) {
+                    AutomationElement cabElem = AutomationElement.FromHandle(cabinet);
+                    if (cabElem == null) return;
+
+                    // 检索当前 Explorer 窗口内的所有 TabItem
+                    Condition tabCond = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem);
+                    AutomationElementCollection tabs = cabElem.FindAll(TreeScope.Descendants, tabCond);
+
+                    AutomationElement targetTab = null;
+                    System.Windows.Point p = new System.Windows.Point(pt.x, pt.y);
+                    int tabIndex = -1;
+
+                    for (int i = 0; i < tabs.Count; i++) {
+                        AutomationElement t = tabs[i];
+                        System.Windows.Rect r = t.Current.BoundingRectangle;
+                        if (r.Contains(p)) {
+                            targetTab = t;
+                            tabIndex = i;
+                            break;
+                        }
+                    }
+
+                    if (targetTab != null) {
+                        // 提取并记录该 Tab 的路径入栈
+                        string tabName = targetTab.Current.Name;
+                        dynamic shell = GetShell();
+                        string path = TabTracker.GetPathFromTab(cabinet, tabIndex, tabName, shell);
+                        if (!string.IsNullOrEmpty(path)) {
+                            TabTracker.PushClosed(path);
+                        }
+
+                        // 查找该 TabItem 内部的关闭按钮并触发
+                        Condition btnCond = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
+                        AutomationElement closeBtn = targetTab.FindFirst(TreeScope.Children, btnCond);
+                        if (closeBtn != null) {
+                            InvokePattern inv = closeBtn.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
+                            if (inv != null) {
+                                inv.Invoke();
+                                return;
+                            }
+                        }
+
+                        // 兜底：如果未找到按钮，向窗口发送关闭当前标签指令
+                        Win32.PostMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_CLOSE_TAB, IntPtr.Zero);
+                    }
+                }
+            } catch (Exception ex) {
+                Trace.WriteLine("HandleTabDoubleClick error: " + ex.Message);
+            }
+        }
+
+        private IntPtr OnKeyboardHook(int nCode, IntPtr wParam, IntPtr lParam) {
+            if (nCode >= 0 && (wParam == (IntPtr)Win32.WM_KEYDOWN || wParam == (IntPtr)Win32.WM_SYSKEYDOWN)) {
+                try {
+                    Win32.KBDLLHOOKSTRUCT kb = (Win32.KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(Win32.KBDLLHOOKSTRUCT));
+
+                    bool ctrl = (Win32.GetAsyncKeyState(Win32.VK_CONTROL) & 0x8000) != 0;
+                    bool shift = (Win32.GetAsyncKeyState(Win32.VK_SHIFT) & 0x8000) != 0;
+                    bool alt = (Win32.GetAsyncKeyState(Win32.VK_MENU) & 0x8000) != 0;
+
+                    // 1. 恢复刚关闭的标签页 (Ctrl + Shift + T)
+                    if (kb.vkCode == Win32.VK_T && ctrl && shift && !alt) {
+                        if (_enableRestoreTabShortcut) {
+                            IntPtr fore = Win32.GetForegroundWindow();
+                            string cls = Win32.GetWindowClassName(fore);
+                            // 仅当焦点在 Explorer 窗口、桌面或无其他窗口时响应
+                            if (cls == "CabinetWClass" || cls == "Progman" || cls == "WorkerW" || Win32.GetAllCabinetWindows().Count == 0) {
+                                ThreadPool.QueueUserWorkItem(_ => {
+                                    using (Win32.AttachToInteractiveDesktop()) {
+                                        TabTracker.RestoreLastClosedTab();
+                                    }
+                                });
+                                return (IntPtr)1; // 拦截按键，不干扰其他应用
+                            }
+                        }
+                    }
+
+                    // 2. 监听 Ctrl + W (记录被关闭的标签路径)
+                    if (kb.vkCode == Win32.VK_W && ctrl && !shift && !alt) {
+                        IntPtr fore = Win32.GetForegroundWindow();
+                        if (Win32.GetWindowClassName(fore) == "CabinetWClass") {
+                            ThreadPool.QueueUserWorkItem(_ => {
+                                try {
+                                    using (Win32.AttachToInteractiveDesktop()) {
+                                        string activePath = TabTracker.GetActiveCabinetPath(fore, GetShell());
+                                        if (!string.IsNullOrEmpty(activePath)) {
+                                            TabTracker.PushClosed(activePath);
+                                        }
+                                    }
+                                } catch {}
+                            });
+                        }
+                    }
+                } catch {}
+            }
+            return Win32.CallNextHookEx(_kbHookId, nCode, wParam, lParam);
         }
 
         private void OnWindowEvent(IntPtr hWinEventHook, uint eventType, IntPtr hWnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime) {
@@ -259,6 +450,14 @@ namespace ExplorerTabRouter {
         }
 
         public void Dispose() {
+            if (_mouseHookId != IntPtr.Zero) {
+                Win32.UnhookWindowsHookEx(_mouseHookId);
+                _mouseHookId = IntPtr.Zero;
+            }
+            if (_kbHookId != IntPtr.Zero) {
+                Win32.UnhookWindowsHookEx(_kbHookId);
+                _kbHookId = IntPtr.Zero;
+            }
             if (_hookId != IntPtr.Zero) {
                 Win32.UnhookWinEvent(_hookId);
                 _hookId = IntPtr.Zero;

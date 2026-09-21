@@ -6,16 +6,21 @@ if not exist "%CSC%" (
     set CSC=C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe
 )
 
+set WPF=C:\Windows\Microsoft.NET\Framework64\v4.0.30319\WPF
+if not exist "%WPF%" (
+    set WPF=C:\Windows\Microsoft.NET\Framework\v4.0.30319\WPF
+)
+
 if not exist "%~dp0bin" (
     mkdir "%~dp0bin"
 )
 
 echo [1/3] Compiling ExplorerTabRouter.exe to root directory ...
-"%CSC%" /nologo /target:winexe /win32icon:"%~dp0src\app.ico" /optimize+ /platform:anycpu /out:"%~dp0ExplorerTabRouter.exe" /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:Microsoft.CSharp.dll "%~dp0src\*.cs"
+"%CSC%" /nologo /target:winexe /win32icon:"%~dp0src\app.ico" /optimize+ /platform:anycpu /out:"%~dp0ExplorerTabRouter.exe" /lib:"%WPF%" /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:Microsoft.CSharp.dll /r:UIAutomationClient.dll /r:UIAutomationTypes.dll /r:WindowsBase.dll "%~dp0src\*.cs"
 
 if %ERRORLEVEL% equ 0 (
     copy /y "%~dp0ExplorerTabRouter.exe" "%~dp0bin\ExplorerTabRouter.exe" >nul
-    echo [2/3] Build SUCCESS: %~dp0ExplorerTabRouter.exe (Root)
+    echo [2/3] Build SUCCESS: %~dp0ExplorerTabRouter.exe [Root]
     echo [3/3] Sync copy: %~dp0bin\ExplorerTabRouter.exe
 ) else (
     echo [ERROR] Build FAILED!

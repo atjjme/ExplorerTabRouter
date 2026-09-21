@@ -42,8 +42,53 @@ namespace ExplorerTabRouter {
 
         public const int VK_SHIFT = 0x10;
         public const int VK_CONTROL = 0x11;
+        public const int VK_MENU = 0x12;
         public const int VK_LBUTTON = 0x01;
+        public const int VK_T = 0x54;
+        public const int VK_W = 0x57;
 
+        public const int WH_MOUSE_LL = 14;
+        public const int WH_KEYBOARD_LL = 13;
+        public const int WM_LBUTTONDOWN = 0x0201;
+        public const int WM_KEYDOWN = 0x0100;
+        public const int WM_SYSKEYDOWN = 0x0104;
+
+        public const int SM_CXDOUBLECLK = 36;
+        public const int SM_CYDOUBLECLK = 37;
+        public const uint GA_ROOT = 2;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT {
+            public int x;
+            public int y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT {
+            public int Left, Top, Right, Bottom;
+            public int Width { get { return Right - Left; } }
+            public int Height { get { return Bottom - Top; } }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MSLLHOOKSTRUCT {
+            public POINT pt;
+            public uint mouseData;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct KBDLLHOOKSTRUCT {
+            public uint vkCode;
+            public uint scanCode;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        public delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
         public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hWnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -109,6 +154,31 @@ namespace ExplorerTabRouter {
 
         [DllImport("user32.dll")]
         public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern uint GetDoubleClickTime();
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int nIndex);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr WindowFromPoint(POINT Point);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         [DllImport("user32.dll")]
         public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
