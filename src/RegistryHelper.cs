@@ -17,19 +17,17 @@ namespace ExplorerTabRouter {
         /// </summary>
         public static void CleanupLegacyFolderAssociation() {
             try {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Folder\shell\open\command", false)) {
+                // 清理 HKCU 下残留的 Folder\shell 项，避免其覆盖系统 HKLM 默认关联导致回收站等双击失效
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Folder", false)) {
                     if (key != null) {
-                        string val = key.GetValue("") as string;
-                        if (!string.IsNullOrEmpty(val) && val.IndexOf("ExplorerTabRouter", StringComparison.OrdinalIgnoreCase) >= 0) {
-                            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Folder\shell\open", false);
-                        }
+                        Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Folder", false);
                     }
                 }
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Directory\shell\open\command", false)) {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Directory\shell", false)) {
                     if (key != null) {
-                        string val = key.GetValue("") as string;
-                        if (!string.IsNullOrEmpty(val) && val.IndexOf("ExplorerTabRouter", StringComparison.OrdinalIgnoreCase) >= 0) {
-                            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Directory\shell\open", false);
+                        // 如果 shell 下没有任何其他自定义命令，则清理掉以还原默认
+                        if (key.SubKeyCount == 0) {
+                            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Directory\shell", false);
                         }
                     }
                 }

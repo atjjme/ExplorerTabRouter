@@ -105,6 +105,9 @@ namespace ExplorerTabRouter {
         [DllImport("user32.dll")]
         public static extern bool IsWindowVisible(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
@@ -205,6 +208,15 @@ namespace ExplorerTabRouter {
             } catch {}
         }
 
+        public static void AddToTaskbar(IntPtr hWnd) {
+            if (hWnd == IntPtr.Zero) return;
+            try {
+                if (_taskbarList != null) {
+                    _taskbarList.AddTab(hWnd);
+                }
+            } catch {}
+        }
+
         /// <summary>
         /// 瞬间将窗口置于完全透明、从任务栏移除并移动到屏幕外，彻底消除新窗口弹出与任务栏图标闪烁/融合感
         /// </summary>
@@ -224,6 +236,43 @@ namespace ExplorerTabRouter {
 
                 // 4. 移出屏幕物理渲染区域
                 SetWindowPos(hWnd, IntPtr.Zero, -32000, -32000, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+            } catch {}
+        }
+
+        /// <summary>
+        /// 将被临时移出屏幕/隐藏的窗口恢复原貌并置前显示
+        /// </summary>
+        public static void RestoreWindow(IntPtr hWnd, RECT? originalRect = null) {
+            if (hWnd == IntPtr.Zero) return;
+            try {
+                // 1. 还原扩展样式：移除 WS_EX_TOOLWINDOW，恢复 WS_EX_APPWINDOW
+                int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+                SetWindowLong(hWnd, GWL_EXSTYLE, (exStyle | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW);
+
+                // 2. 恢复 100% 不透明度
+                SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
+
+                // 3. 重新加回任务栏
+                AddToTaskbar(hWnd);
+
+                // 4. 还原窗口几何位置
+                if (originalRect.HasValue && originalRect.Value.Left > -10000 && originalRect.Value.Width > 100 && originalRect.Value.Height > 100) {
+                    RECT r = originalRect.Value;
+                    SetWindowPos(hWnd, IntPtr.Zero, r.Left, r.Top, r.Width, r.Height, SWP_NOZORDER | SWP_SHOWWINDOW);
+                } else {
+                    // 默认居中主屏幕显示
+                    int screenW = System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Width;
+                    int screenH = System.Windows.Forms.Screen.PrimaryScreen.WorkingArea.Height;
+                    int w = Math.Min(1024, (int)(screenW * 0.8));
+                    int h = Math.Min(700, (int)(screenH * 0.8));
+                    int x = (screenW - w) / 2;
+                    int y = (screenH - h) / 2;
+                    SetWindowPos(hWnd, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_SHOWWINDOW);
+                }
+
+                // 5. 显示并置前激活
+                ShowWindow(hWnd, SW_SHOWNORMAL);
+                ForceForegroundWindow(hWnd);
             } catch {}
         }
 

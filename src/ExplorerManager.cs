@@ -55,13 +55,16 @@ namespace ExplorerTabRouter {
         public static bool RouteOpenIntoCabinet(IntPtr targetCabinet, string targetPath, dynamic sharedShell = null) {
             using (Win32.AttachToInteractiveDesktop()) {
                 string resolvedPath = NormalizePath(targetPath);
+                if (string.IsNullOrEmpty(resolvedPath)) {
+                    // 保护：如果目标路径为空，绝不在宿主窗口凭空打开 This PC 标签页
+                    return false;
+                }
+
                 dynamic shell = sharedShell ?? Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
 
-                if (!string.IsNullOrEmpty(resolvedPath)) {
-                    if (TrySwitchToExistingTab(targetCabinet, resolvedPath, shell)) {
-                        Win32.ForceForegroundWindow(targetCabinet);
-                        return true;
-                    }
+                if (TrySwitchToExistingTab(targetCabinet, resolvedPath, shell)) {
+                    Win32.ForceForegroundWindow(targetCabinet);
+                    return true;
                 }
 
                 return OpenNewTabAndNavigate(targetCabinet, resolvedPath, shell);
@@ -120,8 +123,18 @@ namespace ExplorerTabRouter {
                                 if (w != null) {
                                     object hwndObj = w.HWND;
                                     if (hwndObj != null && Convert.ToInt64(hwndObj) == (long)cabinet) {
-                                        w.Navigate2(targetPath);
-                                        return true;
+                                        try {
+                                            w.Navigate2(targetPath);
+                                            return true;
+                                        } catch {
+                                            try {
+                                                dynamic folder = shell.NameSpace(targetPath);
+                                                if (folder != null) {
+                                                    w.Navigate2(folder.Self);
+                                                    return true;
+                                                }
+                                            } catch {}
+                                        }
                                     }
                                 }
                             } catch {
@@ -248,6 +261,14 @@ namespace ExplorerTabRouter {
         private static bool IsPathMatch(string targetPath, string url) {
             if (string.IsNullOrEmpty(targetPath) || string.IsNullOrEmpty(url)) return false;
 
+            // 针对回收站等特殊虚拟文件夹的去重匹配
+            if ((targetPath.IndexOf("RecycleBinFolder", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 targetPath.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0) &&
+                (url.IndexOf("RecycleBinFolder", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 url.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0)) {
+                return true;
+            }
+
             string localFromUrl = UrlToLocalPath(url);
             if (!string.IsNullOrEmpty(localFromUrl)) {
                 string normTarget = NormalizePath(targetPath).TrimEnd('\\');
@@ -302,6 +323,18 @@ namespace ExplorerTabRouter {
 
             string s = raw.Trim('\"', '\'', ' ');
             if (string.IsNullOrEmpty(s)) return string.Empty;
+
+            // 特殊系统 CLSID 规范化为 Shell URL Moniker（确保 COM Navigate2 能成功识别导航，防止 E_INVALIDARG）
+            if (s.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0) {
+                return "shell:RecycleBinFolder";
+            }
+            if (s.IndexOf("{20D04FE0-3AEA-1069-A2D8-08002B30309D}", StringComparison.OrdinalIgnoreCase) >= 0) {
+                return "shell:MyComputerFolder";
+            }
+            if (s.IndexOf("{26EE0668-A00A-44D7-9371-BEB064C98683}", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                s.IndexOf("{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}", StringComparison.OrdinalIgnoreCase) >= 0) {
+                return "shell:ControlPanelFolder";
+            }
 
             if (s.StartsWith("::{", StringComparison.OrdinalIgnoreCase) ||
                 s.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)) {

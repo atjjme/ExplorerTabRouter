@@ -179,7 +179,14 @@ namespace ExplorerTabRouter {
                 return;
             }
 
-            // 关键判断 3：查找系统中是否存在其他已有的宿主 Explorer 窗口
+            // 关键判断 3：若窗口标题已表明是回收站等系统特殊窗口，直接放行独立打开
+            string initialTitle = Win32.GetWindowTitle(hWnd);
+            if (IsSpecialSystemWindow(null, initialTitle)) {
+                lock (_lock) { _knownCabinets.Add(hWnd); }
+                return;
+            }
+
+            // 关键判断 4：查找系统中是否存在其他已有的宿主 Explorer 窗口
             List<IntPtr> allCabinets = Win32.GetAllCabinetWindows();
             IntPtr hostCabinet = IntPtr.Zero;
             foreach (IntPtr c in allCabinets) {
@@ -214,28 +221,70 @@ namespace ExplorerTabRouter {
             });
         }
 
+        private static bool IsSpecialSystemWindow(string path, string title) {
+            if (!string.IsNullOrEmpty(path)) {
+                // 回收站 CLSID 或 Shell URL
+                if (path.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    path.IndexOf("RecycleBinFolder", StringComparison.OrdinalIgnoreCase) >= 0) {
+                    return true;
+                }
+                // 控制面板 CLSID 或 Shell URL
+                if (path.IndexOf("{26EE0668-A00A-44D7-9371-BEB064C98683}", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    path.IndexOf("{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    path.IndexOf("ControlPanelFolder", StringComparison.OrdinalIgnoreCase) >= 0) {
+                    return true;
+                }
+            }
+            if (!string.IsNullOrEmpty(title)) {
+                if (title.IndexOf("Recycle Bin", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    title.IndexOf("回收站", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    title.IndexOf("Control Panel", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    title.IndexOf("控制面板", StringComparison.OrdinalIgnoreCase) >= 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void HandleNewExplorerWindow(IntPtr newHwnd, IntPtr hostCabinet) {
             try {
                 using (Win32.AttachToInteractiveDesktop()) {
-                    // 双重保障：确保处于完全不可见、无任务栏按钮与屏幕外状态
-                    Win32.MakeWindowInvisibleOffscreen(newHwnd);
-                    Win32.ForceForegroundWindow(hostCabinet);
-
                     dynamic shell = GetShell();
 
-                    // 1. 超低延时自旋检测新窗口路径 (每 10ms 轮询一次，最多等 800ms)
+                    // 1. 超低延时自旋检测新窗口路径与标题 (每 10ms 轮询一次，最多等 800ms)
                     string openedPath = string.Empty;
+                    bool isSpecial = false;
                     for (int i = 0; i < 80; i++) {
+                        string curTitle = Win32.GetWindowTitle(newHwnd);
                         openedPath = GetPathFromHwnd(newHwnd, shell);
+
+                        if (IsSpecialSystemWindow(openedPath, curTitle)) {
+                            isSpecial = true;
+                            break;
+                        }
                         if (!string.IsNullOrEmpty(openedPath)) break;
                         Thread.Sleep(10);
                     }
 
-                    // 2. 【核心加速】：一旦捕获到路径，立即发送 WM_CLOSE 销毁多余新窗口！
+                    // 2. 如果识别为回收站等特殊系统窗口：
+                    // 坚决放行！恢复窗口显示，绝不发送 WM_CLOSE，绝不在宿主窗口打开 This PC！
+                    if (isSpecial) {
+                        Win32.RestoreWindow(newHwnd);
+                        return;
+                    }
+
+                    // 3. 如果超时后仍未捕获到任何有效路径：
+                    // 说明不是常规文件夹或窗口未就绪，安全回退恢复新窗口显示，绝不在宿主窗口误开 This PC 空标签！
+                    if (string.IsNullOrEmpty(openedPath)) {
+                        Win32.RestoreWindow(newHwnd);
+                        return;
+                    }
+
+                    // 4. 【核心加速】：确定是普通文件夹后，立即发送 WM_CLOSE 销毁多余新窗口！
                     // 绝不等待宿主新标签导航结束，提前彻底关闭多余窗口，完全消除延迟！
                     Win32.PostMessage(newHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
 
-                    // 3. 在宿主窗口中打开该路径（新标签或切换至已打开标签）
+                    // 5. 在宿主窗口中打开该路径（新标签或切换至已打开标签）
                     ExplorerManager.RouteOpenIntoCabinet(hostCabinet, openedPath, shell);
                     Win32.ForceForegroundWindow(hostCabinet);
                 }
@@ -247,7 +296,9 @@ namespace ExplorerTabRouter {
         private static string GetPathFromHwnd(IntPtr hWnd, dynamic shell) {
             if (shell == null) return string.Empty;
             try {
-                foreach (dynamic w in (System.Collections.IEnumerable)shell.Windows()) {
+                var windows = shell.Windows();
+                if (windows == null) return string.Empty;
+                foreach (dynamic w in (System.Collections.IEnumerable)windows) {
                     try {
                         if (w != null && (long)w.HWND == (long)hWnd) {
                             string p = ExtractPathFromBrowser(w);
