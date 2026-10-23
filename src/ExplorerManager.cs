@@ -9,6 +9,12 @@ using System.Windows.Automation;
 
 namespace ExplorerTabRouter {
     public static class ExplorerManager {
+        public static bool IsRecycleBinPath(string path) {
+            if (string.IsNullOrEmpty(path)) return false;
+            return path.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   path.IndexOf("RecycleBinFolder", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         /// <summary>
         /// 核心路由方法：在已有 Explorer 窗口的新 Tab 中打开目标路径，若无窗口则新开
         /// </summary>
@@ -123,6 +129,12 @@ namespace ExplorerTabRouter {
                                 if (w != null) {
                                     object hwndObj = w.HWND;
                                     if (hwndObj != null && Convert.ToInt64(hwndObj) == (long)cabinet) {
+                                        if (IsRecycleBinPath(targetPath)) {
+                                            try {
+                                                w.Navigate2(10);
+                                                return true;
+                                            } catch {}
+                                        }
                                         try {
                                             w.Navigate2(targetPath);
                                             return true;
@@ -164,8 +176,12 @@ namespace ExplorerTabRouter {
                         long hwnd = Convert.ToInt64(hwndObj);
 
                         if (hwnd == (long)cabinet) {
-                            string url = (string)w.LocationURL;
-                            if (IsPathMatch(targetPath, url)) {
+                            string tabPath = DaemonWatcher.ExtractPathFromBrowser(w);
+                            if (string.IsNullOrEmpty(tabPath)) {
+                                try { tabPath = (string)w.LocationURL; } catch {}
+                            }
+
+                            if (IsPathMatch(targetPath, tabPath)) {
                                 string locName = null;
                                 try { locName = (string)w.LocationName; } catch {}
 
@@ -205,6 +221,21 @@ namespace ExplorerTabRouter {
                             if (!string.IsNullOrEmpty(name) &&
                                 (name.Equals(locationName, StringComparison.OrdinalIgnoreCase) ||
                                  name.IndexOf(locationName, StringComparison.OrdinalIgnoreCase) >= 0)) {
+                                targetTab = tabItems[i];
+                                break;
+                            }
+                        } catch {}
+                    }
+                }
+
+                // 1.5 若是回收站，额外匹配 "回收站" 或 "Recycle Bin"
+                if (targetTab == null && IsRecycleBinPath(targetPath)) {
+                    for (int i = 0; i < tabItems.Count; i++) {
+                        try {
+                            string name = tabItems[i].Current.Name;
+                            if (!string.IsNullOrEmpty(name) &&
+                                (name.IndexOf("回收站", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.IndexOf("Recycle Bin", StringComparison.OrdinalIgnoreCase) >= 0)) {
                                 targetTab = tabItems[i];
                                 break;
                             }
@@ -262,10 +293,7 @@ namespace ExplorerTabRouter {
             if (string.IsNullOrEmpty(targetPath) || string.IsNullOrEmpty(url)) return false;
 
             // 针对回收站等特殊虚拟文件夹的去重匹配
-            if ((targetPath.IndexOf("RecycleBinFolder", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 targetPath.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0) &&
-                (url.IndexOf("RecycleBinFolder", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 url.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0)) {
+            if (IsRecycleBinPath(targetPath) && IsRecycleBinPath(url)) {
                 return true;
             }
 

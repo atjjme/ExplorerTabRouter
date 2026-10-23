@@ -17,6 +17,11 @@ namespace ExplorerTabRouter {
         private IntPtr _hookId = IntPtr.Zero;
         private Win32.WinEventDelegate _hookDelegate;
         private readonly HashSet<IntPtr> _knownCabinets = new HashSet<IntPtr>();
+        private readonly Dictionary<IntPtr, HashSet<IntPtr>> _cabinetTabs = new Dictionary<IntPtr, HashSet<IntPtr>>();
+        private readonly Dictionary<IntPtr, IntPtr> _tabToCabinet = new Dictionary<IntPtr, IntPtr>();
+        private readonly HashSet<IntPtr> _reparentedCabinets = new HashSet<IntPtr>();
+        private readonly HashSet<IntPtr> _pendingInterception = new HashSet<IntPtr>();
+        private int _lastTabDestroyedTick = 0;
         private readonly object _lock = new object();
         private bool _isPaused = false;
         private dynamic _shell;
@@ -34,11 +39,79 @@ namespace ExplorerTabRouter {
             return _shell;
         }
 
+        private void SyncCabinetTabs(IntPtr cabinet) {
+            if (cabinet == IntPtr.Zero || !Win32.IsWindow(cabinet)) return;
+            lock (_lock) {
+                List<IntPtr> tabs = Win32.GetTabsForCabinet(cabinet);
+                HashSet<IntPtr> existingTabs;
+                if (!_cabinetTabs.TryGetValue(cabinet, out existingTabs)) {
+                    existingTabs = new HashSet<IntPtr>();
+                    _cabinetTabs[cabinet] = existingTabs;
+                } else {
+                    List<IntPtr> toRemove = null;
+                    foreach (IntPtr t in existingTabs) {
+                        if (!tabs.Contains(t)) {
+                            if (toRemove == null) toRemove = new List<IntPtr>();
+                            toRemove.Add(t);
+                        }
+                    }
+                    if (toRemove != null) {
+                        foreach (IntPtr t in toRemove) {
+                            existingTabs.Remove(t);
+                            IntPtr cab;
+                            if (_tabToCabinet.TryGetValue(t, out cab) && cab == cabinet) {
+                                _tabToCabinet.Remove(t);
+                            }
+                        }
+                    }
+                }
+
+                foreach (IntPtr t in tabs) {
+                    existingTabs.Add(t);
+                    _tabToCabinet[t] = cabinet;
+                }
+            }
+        }
+
+        private void RefreshAllKnownCabinetTabs() {
+            lock (_lock) {
+                List<IntPtr> stale = null;
+                foreach (IntPtr cab in _knownCabinets) {
+                    if (!Win32.IsWindow(cab)) {
+                        if (stale == null) stale = new List<IntPtr>();
+                        stale.Add(cab);
+                    }
+                }
+                if (stale != null) {
+                    foreach (IntPtr cab in stale) {
+                        _knownCabinets.Remove(cab);
+                        _pendingInterception.Remove(cab);
+                        _reparentedCabinets.Remove(cab);
+                        HashSet<IntPtr> oldTabs;
+                        if (_cabinetTabs.TryGetValue(cab, out oldTabs)) {
+                            foreach (IntPtr t in oldTabs) {
+                                IntPtr owner;
+                                if (_tabToCabinet.TryGetValue(t, out owner) && owner == cab) {
+                                    _tabToCabinet.Remove(t);
+                                }
+                            }
+                            _cabinetTabs.Remove(cab);
+                        }
+                    }
+                }
+
+                foreach (IntPtr cab in _knownCabinets) {
+                    SyncCabinetTabs(cab);
+                }
+            }
+        }
+
         public void Start(bool showTray = true) {
-            // 初始化已知 Explorer 窗口
+            // 初始化已知 Explorer 窗口与标签状态
             lock (_lock) {
                 foreach (IntPtr h in Win32.GetAllCabinetWindows()) {
                     _knownCabinets.Add(h);
+                    SyncCabinetTabs(h);
                 }
             }
 
@@ -47,7 +120,7 @@ namespace ExplorerTabRouter {
                 InitTray();
             }
 
-            // 注册系统级窗口创建与显示监听 (EVENT_OBJECT_CREATE 到 EVENT_OBJECT_SHOW)
+            // 注册系统级窗口创建、显示与销毁监听 (EVENT_OBJECT_CREATE 到 EVENT_OBJECT_SHOW 涵盖 EVENT_OBJECT_DESTROY)
             _hookDelegate = new Win32.WinEventDelegate(OnWindowEvent);
             _hookId = Win32.SetWinEventHook(
                 Win32.EVENT_OBJECT_CREATE,
@@ -145,12 +218,88 @@ namespace ExplorerTabRouter {
         private void OnWindowEvent(IntPtr hWinEventHook, uint eventType, IntPtr hWnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime) {
             if (_isPaused || idObject != 0 || idChild != 0 || hWnd == IntPtr.Zero) return;
 
-            // 只处理 CabinetWClass (Explorer 窗口)
+            // 1. 处理窗口/控件销毁事件 (EVENT_OBJECT_DESTROY = 0x8001)
+            if (eventType == Win32.EVENT_OBJECT_DESTROY) {
+                lock (_lock) {
+                    IntPtr ownerCab;
+                    if (_tabToCabinet.TryGetValue(hWnd, out ownerCab)) {
+                        if (Win32.IsWindow(ownerCab) && Win32.IsWindowVisible(ownerCab)) {
+                            _lastTabDestroyedTick = Environment.TickCount;
+                        }
+                        _tabToCabinet.Remove(hWnd);
+                        HashSet<IntPtr> tabs;
+                        if (_cabinetTabs.TryGetValue(ownerCab, out tabs)) {
+                            tabs.Remove(hWnd);
+                        }
+                    }
+                    if (_knownCabinets.Contains(hWnd)) {
+                        _knownCabinets.Remove(hWnd);
+                        _pendingInterception.Remove(hWnd);
+                        _reparentedCabinets.Remove(hWnd);
+                        HashSet<IntPtr> oldTabs;
+                        if (_cabinetTabs.TryGetValue(hWnd, out oldTabs)) {
+                            foreach (IntPtr t in oldTabs) {
+                                IntPtr owner;
+                                if (_tabToCabinet.TryGetValue(t, out owner) && owner == hWnd) {
+                                    _tabToCabinet.Remove(t);
+                                }
+                            }
+                            _cabinetTabs.Remove(hWnd);
+                        }
+                    }
+                }
+                return;
+            }
+
+            // 2. 获取窗口类名
             string className = Win32.GetWindowClassName(hWnd);
+
+            // 3. 处理 ShellTabWindowClass (标签页)
+            if (className == "ShellTabWindowClass") {
+                IntPtr root = Win32.GetAncestor(hWnd, Win32.GA_ROOT);
+                if (root != IntPtr.Zero) {
+                    lock (_lock) {
+                        IntPtr oldRoot;
+                        if (_tabToCabinet.TryGetValue(hWnd, out oldRoot) && oldRoot != IntPtr.Zero && oldRoot != root) {
+                            // 该 ShellTabWindowClass 从 oldRoot 迁移到了 root (Tab Tear-off)！
+                            _reparentedCabinets.Add(root);
+                            _tabToCabinet[hWnd] = root;
+                            HashSet<IntPtr> oldTabs;
+                            if (_cabinetTabs.TryGetValue(oldRoot, out oldTabs)) {
+                                oldTabs.Remove(hWnd);
+                            }
+                            HashSet<IntPtr> newTabs;
+                            if (!_cabinetTabs.TryGetValue(root, out newTabs)) {
+                                newTabs = new HashSet<IntPtr>();
+                                _cabinetTabs[root] = newTabs;
+                            }
+                            newTabs.Add(hWnd);
+                        } else if (!_pendingInterception.Contains(root) && _knownCabinets.Contains(root)) {
+                            HashSet<IntPtr> cabTabs;
+                            if (!_cabinetTabs.TryGetValue(root, out cabTabs)) {
+                                cabTabs = new HashSet<IntPtr>();
+                                _cabinetTabs[root] = cabTabs;
+                            }
+                            cabTabs.Add(hWnd);
+                            _tabToCabinet[hWnd] = root;
+                        }
+                    }
+                }
+                return;
+            }
+
+            // 4. 只处理 CabinetWClass (Explorer 窗口)
             if (className != "CabinetWClass") return;
 
+            // 5. 检查是否正在拦截判断中
             lock (_lock) {
-                // 清理已失效的窗口句柄
+                if (_pendingInterception.Contains(hWnd)) {
+                    // 例如 EVENT_OBJECT_CREATE 后紧接着触发 EVENT_OBJECT_SHOW，保持隐形
+                    Win32.MakeWindowInvisibleOffscreen(hWnd);
+                    return;
+                }
+
+                // 6. 清理已失效句柄并判断是否已是已知窗口
                 List<IntPtr> stale = null;
                 foreach (IntPtr k in _knownCabinets) {
                     if (!Win32.IsWindow(k)) {
@@ -159,30 +308,51 @@ namespace ExplorerTabRouter {
                     }
                 }
                 if (stale != null) {
-                    foreach (IntPtr s in stale) _knownCabinets.Remove(s);
+                    foreach (IntPtr s in stale) {
+                        _knownCabinets.Remove(s);
+                        _pendingInterception.Remove(s);
+                        _reparentedCabinets.Remove(s);
+                        HashSet<IntPtr> oldTabs;
+                        if (_cabinetTabs.TryGetValue(s, out oldTabs)) {
+                            foreach (IntPtr t in oldTabs) {
+                                IntPtr owner;
+                                if (_tabToCabinet.TryGetValue(t, out owner) && owner == s) {
+                                    _tabToCabinet.Remove(t);
+                                }
+                            }
+                            _cabinetTabs.Remove(s);
+                        }
+                    }
                 }
 
                 if (_knownCabinets.Contains(hWnd)) return;
             }
 
-            // 关键判断 1：检查鼠标左键是否按下
-            // 如果用户正在按住鼠标左键，说明这是用户把某个 Tab 拖出窗口拆分（Tab Tear-off）！
-            // 此时必须直接放行，绝不抓回！
-            if (Win32.IsMouseLButtonPressed()) {
-                lock (_lock) { _knownCabinets.Add(hWnd); }
+            // 关键判断 1：检查是否是标签拖出拆分 (Tab Tear-off)
+            if (IsTabTearOff(hWnd)) {
+                lock (_lock) {
+                    _knownCabinets.Add(hWnd);
+                    SyncCabinetTabs(hWnd);
+                }
                 return;
             }
 
             // 关键判断 2：用户按住 Ctrl + Shift 故意强制打开新窗口
             if (Win32.IsCtrlShiftPressed()) {
-                lock (_lock) { _knownCabinets.Add(hWnd); }
+                lock (_lock) {
+                    _knownCabinets.Add(hWnd);
+                    SyncCabinetTabs(hWnd);
+                }
                 return;
             }
 
-            // 关键判断 3：若窗口标题已表明是回收站等系统特殊窗口，直接放行独立打开
+            // 关键判断 3：若窗口标题已表明是控制面板等特殊系统窗口，直接放行独立打开
             string initialTitle = Win32.GetWindowTitle(hWnd);
             if (IsSpecialSystemWindow(null, initialTitle)) {
-                lock (_lock) { _knownCabinets.Add(hWnd); }
+                lock (_lock) {
+                    _knownCabinets.Add(hWnd);
+                    SyncCabinetTabs(hWnd);
+                }
                 return;
             }
 
@@ -198,22 +368,22 @@ namespace ExplorerTabRouter {
 
             // 如果没有其他已有窗口，这本身就是第一个主窗口，直接放行
             if (hostCabinet == IntPtr.Zero) {
-                lock (_lock) { _knownCabinets.Add(hWnd); }
+                lock (_lock) {
+                    _knownCabinets.Add(hWnd);
+                    SyncCabinetTabs(hWnd);
+                }
                 return;
             }
 
-            // 此时确定这是一个外部新弹出的多余 Explorer 窗口！
+            // 此时确定这是一个外部新弹出的多余 Explorer 窗口，进入待拦截流程
             lock (_lock) {
                 _knownCabinets.Add(hWnd);
+                _pendingInterception.Add(hWnd);
             }
 
-            // 【核心消除任务栏双图标与闪烁】：
-            // 瞬间将新窗口置为 ToolWindow 移除任务栏图标、100% 透明、SW_HIDE 并移出屏幕！
-            // 耗时 < 0.1ms，系统任务栏绝不会出现第二个图标！
+            // 瞬间将新窗口原地隐形与剥离任务栏图标
+            // 注意：不要在此处调用 Win32.ForceForegroundWindow(hostCabinet)，避免发送 Alt 键打断 Explorer 正在进行的标签拆分初始化
             Win32.MakeWindowInvisibleOffscreen(hWnd);
-
-            // 立即将宿主窗口置前激活
-            Win32.ForceForegroundWindow(hostCabinet);
 
             // 在后台线程中读取打开的路径并路由到已有窗口的 Tab 中
             ThreadPool.QueueUserWorkItem(state => {
@@ -221,13 +391,73 @@ namespace ExplorerTabRouter {
             });
         }
 
-        private static bool IsSpecialSystemWindow(string path, string title) {
-            if (!string.IsNullOrEmpty(path)) {
-                // 回收站 CLSID 或 Shell URL
-                if (path.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    path.IndexOf("RecycleBinFolder", StringComparison.OrdinalIgnoreCase) >= 0) {
+        private bool IsTabTearOff(IntPtr newHwnd) {
+            // 1. 鼠标左键仍处于按下状态（用户正在拖拽 Tab 拆分）
+            if (Win32.IsMouseLButtonPressed()) {
+                return true;
+            }
+
+            lock (_lock) {
+                // 2. 收到过标签重定向迁移到该窗口的 WinEvent
+                if (_reparentedCabinets.Contains(newHwnd)) {
                     return true;
                 }
+
+                // 3. 检查该窗口当前持有的标签，是否原本属于其它已知窗口
+                List<IntPtr> newTabs = Win32.GetTabsForCabinet(newHwnd);
+                foreach (IntPtr tabHwnd in newTabs) {
+                    IntPtr oldCab;
+                    if (_tabToCabinet.TryGetValue(tabHwnd, out oldCab) && oldCab != IntPtr.Zero && oldCab != newHwnd) {
+                        return true;
+                    }
+                }
+
+                // 4. 最近 800ms 内有已知窗口的 Tab 被销毁/移出（拖拽拆分过程中原窗口 Tab 销毁）
+                if (_lastTabDestroyedTick != 0 && Math.Abs(unchecked(Environment.TickCount - _lastTabDestroyedTick)) <= 800) {
+                    return true;
+                }
+
+                // 5. 遍历所有已有窗口，检查是否有存活的旧标签从原窗口移出（Reparented）或实时标签数减少
+                foreach (KeyValuePair<IntPtr, HashSet<IntPtr>> kvp in _cabinetTabs) {
+                    IntPtr existCab = kvp.Key;
+                    if (existCab == newHwnd || !Win32.IsWindow(existCab)) continue;
+
+                    List<IntPtr> currentTabs = Win32.GetTabsForCabinet(existCab);
+                    HashSet<IntPtr> knownTabs = kvp.Value;
+
+                    List<IntPtr> deadTabs = null;
+                    bool hasMigratedTab = false;
+                    foreach (IntPtr oldTab in knownTabs) {
+                        if (!Win32.IsWindow(oldTab)) {
+                            if (deadTabs == null) deadTabs = new List<IntPtr>();
+                            deadTabs.Add(oldTab);
+                        } else if (!currentTabs.Contains(oldTab)) {
+                            // 窗口句柄依然存活，但已不在原宿主窗口的子窗口列表中 -> 已被迁移拆分出去了！
+                            hasMigratedTab = true;
+                        }
+                    }
+
+                    if (deadTabs != null) {
+                        foreach (IntPtr d in deadTabs) {
+                            knownTabs.Remove(d);
+                            IntPtr owner;
+                            if (_tabToCabinet.TryGetValue(d, out owner) && owner == existCab) {
+                                _tabToCabinet.Remove(d);
+                            }
+                        }
+                    }
+
+                    if (hasMigratedTab || currentTabs.Count < knownTabs.Count) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsSpecialSystemWindow(string path, string title) {
+            if (!string.IsNullOrEmpty(path)) {
                 // 控制面板 CLSID 或 Shell URL
                 if (path.IndexOf("{26EE0668-A00A-44D7-9371-BEB064C98683}", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     path.IndexOf("{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -236,9 +466,7 @@ namespace ExplorerTabRouter {
                 }
             }
             if (!string.IsNullOrEmpty(title)) {
-                if (title.IndexOf("Recycle Bin", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    title.IndexOf("回收站", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    title.IndexOf("Control Panel", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                if (title.IndexOf("Control Panel", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     title.IndexOf("控制面板", StringComparison.OrdinalIgnoreCase) >= 0) {
                     return true;
                 }
@@ -251,10 +479,21 @@ namespace ExplorerTabRouter {
                 using (Win32.AttachToInteractiveDesktop()) {
                     dynamic shell = GetShell();
 
-                    // 1. 超低延时自旋检测新窗口路径与标题 (每 10ms 轮询一次，最多等 800ms)
                     string openedPath = string.Empty;
                     bool isSpecial = false;
+
+                    // 1. 超低延时自旋检测新窗口路径与标题 (每 10ms 轮询一次，最多等 800ms)
                     for (int i = 0; i < 80; i++) {
+                        // 每次循环首先检查是否发生 Tab Tear-off
+                        if (IsTabTearOff(newHwnd)) {
+                            lock (_lock) {
+                                _pendingInterception.Remove(newHwnd);
+                            }
+                            Win32.RestoreWindow(newHwnd);
+                            RefreshAllKnownCabinetTabs();
+                            return;
+                        }
+
                         string curTitle = Win32.GetWindowTitle(newHwnd);
                         openedPath = GetPathFromHwnd(newHwnd, shell);
 
@@ -262,34 +501,79 @@ namespace ExplorerTabRouter {
                             isSpecial = true;
                             break;
                         }
-                        if (!string.IsNullOrEmpty(openedPath)) break;
+
+                        if (string.IsNullOrEmpty(openedPath)) {
+                            if (string.Equals(curTitle, "回收站", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(curTitle, "Recycle Bin", StringComparison.OrdinalIgnoreCase)) {
+                                openedPath = "shell:RecycleBinFolder";
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+
                         Thread.Sleep(10);
                     }
 
-                    // 2. 如果识别为回收站等特殊系统窗口：
-                    // 坚决放行！恢复窗口显示，绝不发送 WM_CLOSE，绝不在宿主窗口打开 This PC！
+                    // 2. 如果识别为控制面板等特殊系统窗口：放行并恢复显示
                     if (isSpecial) {
+                        lock (_lock) {
+                            _pendingInterception.Remove(newHwnd);
+                        }
                         Win32.RestoreWindow(newHwnd);
+                        RefreshAllKnownCabinetTabs();
                         return;
                     }
 
-                    // 3. 如果超时后仍未捕获到任何有效路径：
-                    // 说明不是常规文件夹或窗口未就绪，安全回退恢复新窗口显示，绝不在宿主窗口误开 This PC 空标签！
+                    // 3. 如果拿到了 openedPath，再额外做最多 10 次 × 10ms (100ms) 的 IsTabTearOff 确认
+                    // （以防 Explorer 先创建新窗口标签、几十毫秒后才从原窗口移除旧标签）
+                    if (!string.IsNullOrEmpty(openedPath)) {
+                        for (int j = 0; j < 10; j++) {
+                            if (IsTabTearOff(newHwnd)) {
+                                lock (_lock) {
+                                    _pendingInterception.Remove(newHwnd);
+                                }
+                                Win32.RestoreWindow(newHwnd);
+                                RefreshAllKnownCabinetTabs();
+                                return;
+                            }
+                            Thread.Sleep(10);
+                        }
+                    }
+
+                    // 4. 如果超时后仍未捕获到任何有效路径：安全回退恢复新窗口显示
                     if (string.IsNullOrEmpty(openedPath)) {
+                        lock (_lock) {
+                            _pendingInterception.Remove(newHwnd);
+                        }
                         Win32.RestoreWindow(newHwnd);
+                        RefreshAllKnownCabinetTabs();
                         return;
                     }
 
-                    // 4. 【核心加速】：确定是普通文件夹后，立即发送 WM_CLOSE 销毁多余新窗口！
-                    // 绝不等待宿主新标签导航结束，提前彻底关闭多余窗口，完全消除延迟！
+                    // 5. 确认是外部打开的文件夹（或回收站）：
+                    lock (_lock) {
+                        _pendingInterception.Remove(newHwnd);
+                        _knownCabinets.Remove(newHwnd);
+                    }
+
+                    // 立即发送 WM_CLOSE 关闭多余新窗口
                     Win32.PostMessage(newHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
 
-                    // 5. 在宿主窗口中打开该路径（新标签或切换至已打开标签）
+                    // 在宿主窗口中打开该路径（新标签或切换至已打开标签）
                     ExplorerManager.RouteOpenIntoCabinet(hostCabinet, openedPath, shell);
                     Win32.ForceForegroundWindow(hostCabinet);
+
+                    // 路由完成后同步宿主窗口标签状态
+                    RefreshAllKnownCabinetTabs();
                 }
             } catch (Exception ex) {
                 Trace.WriteLine("HandleNewExplorerWindow error: " + ex.Message);
+                lock (_lock) {
+                    _pendingInterception.Remove(newHwnd);
+                }
+                Win32.RestoreWindow(newHwnd);
+                RefreshAllKnownCabinetTabs();
             }
         }
 
@@ -341,6 +625,13 @@ namespace ExplorerTabRouter {
             if (_hookId != IntPtr.Zero) {
                 Win32.UnhookWinEvent(_hookId);
                 _hookId = IntPtr.Zero;
+            }
+            lock (_lock) {
+                _knownCabinets.Clear();
+                _cabinetTabs.Clear();
+                _tabToCabinet.Clear();
+                _reparentedCabinets.Clear();
+                _pendingInterception.Clear();
             }
             if (_trayIcon != null) {
                 _trayIcon.Visible = false;
