@@ -9,6 +9,8 @@ using System.Windows.Automation;
 
 namespace ExplorerTabRouter {
     public static class ExplorerManager {
+        private static readonly object _routeLock = new object();
+
         public static bool IsRecycleBinPath(string path) {
             if (string.IsNullOrEmpty(path)) return false;
             return path.IndexOf("{645FF040-5081-101B-9F08-00AA002F954E}", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -19,6 +21,22 @@ namespace ExplorerTabRouter {
         /// 核心路由方法：在已有 Explorer 窗口的新 Tab 中打开目标路径，若无窗口则新开
         /// </summary>
         public static bool RouteOpen(string targetPath, bool forceNewWindow = false) {
+            Win32.EnsureInteractiveDesktop();
+            if (Win32.FindWindow("Shell_TrayWnd", null) == IntPtr.Zero) {
+                bool result = false;
+                Thread worker = new Thread(() => {
+                    Win32.EnsureInteractiveDesktop();
+                    result = RouteOpenCore(targetPath, forceNewWindow);
+                });
+                worker.IsBackground = true;
+                worker.Start();
+                worker.Join();
+                return result;
+            }
+            return RouteOpenCore(targetPath, forceNewWindow);
+        }
+
+        private static bool RouteOpenCore(string targetPath, bool forceNewWindow) {
             using (Win32.AttachToInteractiveDesktop()) {
                 List<string> selectedItems = null;
                 string raw = (targetPath ?? string.Empty).Trim();
@@ -58,16 +76,18 @@ namespace ExplorerTabRouter {
                     return true;
                 }
 
-                // 3. 检查是否已经有 Tab 打开了这个路径（智能去重）
-                if (!string.IsNullOrEmpty(resolvedPath)) {
-                    if (TrySwitchToExistingTab(targetCabinet, resolvedPath, null, selectedItems)) {
-                        Win32.ForceForegroundWindow(targetCabinet);
-                        return true;
+                // 3. 串行化标签页路由与新建操作，防止并发发送 CMD_NEW_TAB 导致 Win11 标签栏状态错乱
+                lock (_routeLock) {
+                    if (!string.IsNullOrEmpty(resolvedPath)) {
+                        if (TrySwitchToExistingTab(targetCabinet, resolvedPath, null, selectedItems)) {
+                            Win32.ForceForegroundWindow(targetCabinet);
+                            return true;
+                        }
                     }
-                }
 
-                // 4. 在该窗口中新建 Tab 并导航
-                return OpenNewTabAndNavigate(targetCabinet, resolvedPath, null, selectedItems);
+                    // 4. 在该窗口中新建 Tab 并导航
+                    return OpenNewTabAndNavigate(targetCabinet, resolvedPath, null, selectedItems);
+                }
             }
         }
 
@@ -82,18 +102,20 @@ namespace ExplorerTabRouter {
                     return false;
                 }
 
-                bool ownShell = (sharedShell == null);
-                dynamic shell = sharedShell ?? Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
-                try {
-                    if (TrySwitchToExistingTab(targetCabinet, resolvedPath, shell, selectedItems)) {
-                        Win32.ForceForegroundWindow(targetCabinet);
-                        return true;
-                    }
+                lock (_routeLock) {
+                    bool ownShell = (sharedShell == null);
+                    dynamic shell = sharedShell ?? Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
+                    try {
+                        if (TrySwitchToExistingTab(targetCabinet, resolvedPath, shell, selectedItems)) {
+                            Win32.ForceForegroundWindow(targetCabinet);
+                            return true;
+                        }
 
-                    return OpenNewTabAndNavigate(targetCabinet, resolvedPath, shell, selectedItems);
-                } finally {
-                    if (ownShell && shell != null && Marshal.IsComObject(shell)) {
-                        try { Marshal.FinalReleaseComObject(shell); } catch {}
+                        return OpenNewTabAndNavigate(targetCabinet, resolvedPath, shell, selectedItems);
+                    } finally {
+                        if (ownShell && shell != null && Marshal.IsComObject(shell)) {
+                            try { Marshal.FinalReleaseComObject(shell); } catch {}
+                        }
                     }
                 }
             }
@@ -139,18 +161,19 @@ namespace ExplorerTabRouter {
             try {
                 currentShell = shell ?? Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
 
-                // 1. 仅统计目标宿主窗口自身的当前 Tab 数，避免被关闭拦截窗口注销时影响全局 windows.Count
+                // 1. 记录新建 Tab 前该宿主窗口已有的底层 ShellTabWindowClass 句柄集合与 Browser 数
+                HashSet<IntPtr> existingTabHwnds = new HashSet<IntPtr>(Win32.GetTabsForCabinet(cabinet));
                 int initialCabinetTabCount = CountCabinetBrowsers(currentShell, cabinet);
 
-                // 2. 异步快速发送新建标签命令 (0xA21B / Ctrl+T)，仅发送一次
-                Win32.PostMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
-
-                // 立即将宿主窗口置前并激活，给予用户即时反馈
+                // 立即将宿主窗口置前并激活，确保 Win11 XAML TabView 处于活跃状态以正确挂载新 Tab
                 Win32.ForceForegroundWindow(cabinet);
 
-                // 3. 如果需要导航到具体路径，极速检测该宿主窗口新增的 Tab 并导航 (10ms 间隔)
+                // 2. 发送新建标签命令 (0xA21B / Ctrl+T)，仅发送一次
+                Win32.PostMessage(cabinet, Win32.WM_COMMAND, (IntPtr)Win32.CMD_NEW_TAB, IntPtr.Zero);
+
+                // 3. 如果需要导航到具体路径，等待新 Tab 完成初始 SHELLDLL_DefView 视图挂载后再导航，并确认导航彻底完成
                 if (!string.IsNullOrEmpty(targetPath)) {
-                    NavigateNewTab(cabinet, targetPath, initialCabinetTabCount, currentShell, selectedItems);
+                    NavigateNewTab(cabinet, targetPath, existingTabHwnds, initialCabinetTabCount, currentShell, selectedItems);
                 }
 
                 return true;
@@ -164,15 +187,70 @@ namespace ExplorerTabRouter {
             }
         }
 
-        private static bool NavigateNewTab(IntPtr cabinet, string targetPath, int initialCabinetTabCount, dynamic shell, IList<string> selectedItems = null) {
-            for (int retry = 0; retry < 60; retry++) {
+        private static bool PerformBrowserNavigate(dynamic browser, string targetPath, dynamic shell) {
+            if (browser == null) return false;
+            if (IsRecycleBinPath(targetPath)) {
+                try {
+                    browser.Navigate2(10);
+                    return true;
+                } catch {}
+            }
+            try {
+                browser.Navigate2(targetPath);
+                return true;
+            } catch {
+                try {
+                    dynamic folder = shell.NameSpace(targetPath);
+                    if (folder != null) {
+                        browser.Navigate2(folder.Self);
+                        return true;
+                    }
+                } catch {}
+            }
+            return false;
+        }
+
+        private static bool IsDefaultNewTabTitle(string title) {
+            if (string.IsNullOrEmpty(title)) return true;
+            string t = title.Trim();
+            return t.Equals("This PC", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("此电脑", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("Home", StringComparison.OrdinalIgnoreCase) ||
+                   t.Equals("主文件夹", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsTargetDefaultNewTab(string targetPath) {
+            if (string.IsNullOrEmpty(targetPath)) return true;
+            return targetPath.IndexOf("MyComputerFolder", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   targetPath.IndexOf("{20D04FE0-3AEA-1069-A2D8-08002B30309D}", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool NavigateNewTab(IntPtr cabinet, string targetPath, HashSet<IntPtr> existingTabHwnds, int initialCabinetTabCount, dynamic shell, IList<string> selectedItems = null) {
+            IntPtr newTabHwnd = IntPtr.Zero;
+            dynamic newTabBrowser = null;
+
+            // 第一阶段：精准捕获新建的 ShellTabWindowClass 句柄及其对应的 COM Browser 对象
+            for (int retry = 0; retry < 80; retry++) {
                 if (retry > 0) Thread.Sleep(10);
                 try {
+                    if (newTabHwnd == IntPtr.Zero) {
+                        List<IntPtr> curTabs = Win32.GetTabsForCabinet(cabinet);
+                        foreach (IntPtr t in curTabs) {
+                            if (!existingTabHwnds.Contains(t)) {
+                                newTabHwnd = t;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (newTabHwnd == IntPtr.Zero) continue;
+
                     dynamic windows = shell.Windows();
                     if (windows == null) continue;
                     int curCount = windows.Count;
 
                     int cabTabCount = 0;
+                    dynamic matchedBrowser = null;
                     dynamic lastCabBrowser = null;
 
                     for (int i = 0; i < curCount; i++) {
@@ -183,46 +261,86 @@ namespace ExplorerTabRouter {
                                 if (hwndObj != null && Convert.ToInt64(hwndObj) == (long)cabinet) {
                                     cabTabCount++;
                                     lastCabBrowser = w;
+                                    IntPtr bTabHwnd = Win32.GetTabHwndFromBrowser(w);
+                                    if (bTabHwnd != IntPtr.Zero && bTabHwnd == newTabHwnd) {
+                                        matchedBrowser = w;
+                                        break;
+                                    }
                                 }
                             }
                         } catch {}
                     }
 
-                    // 当目标宿主窗口的 Tab 数量增加时，最后一个属于该宿主窗口的 Browser 即为新建的 Tab
-                    if (cabTabCount > initialCabinetTabCount && lastCabBrowser != null) {
-                        bool navigated = false;
-                        if (IsRecycleBinPath(targetPath)) {
-                            try {
-                                lastCabBrowser.Navigate2(10);
-                                navigated = true;
-                            } catch {}
-                        }
-                        if (!navigated) {
-                            try {
-                                lastCabBrowser.Navigate2(targetPath);
-                                navigated = true;
-                            } catch {
-                                try {
-                                    dynamic folder = shell.NameSpace(targetPath);
-                                    if (folder != null) {
-                                        lastCabBrowser.Navigate2(folder.Self);
-                                        navigated = true;
-                                    }
-                                } catch {}
-                            }
-                        }
-
-                        if (navigated) {
-                            if (selectedItems != null && selectedItems.Count > 0) {
-                                WaitAndSelectItemsInBrowser(lastCabBrowser, targetPath, selectedItems);
-                            }
-                            return true;
-                        }
+                    if (matchedBrowser != null) {
+                        newTabBrowser = matchedBrowser;
+                        break;
                     }
-                } catch {
-                }
+                    if (cabTabCount > initialCabinetTabCount && lastCabBrowser != null) {
+                        newTabBrowser = lastCabBrowser;
+                        break;
+                    }
+                } catch {}
             }
-            return false;
+
+            if (newTabBrowser == null) return false;
+
+            // 第二阶段：等待新 Tab 完成默认初始页 (This PC / 主文件夹) 的 SHELLDLL_DefView 视图激活与 XAML TabViewItem 绑定
+            for (int waitInit = 0; waitInit < 50; waitInit++) {
+                try {
+                    bool defViewReady = (newTabHwnd == IntPtr.Zero) || Win32.IsTabDefViewReady(newTabHwnd);
+                    bool isBusy = false;
+                    try { isBusy = (bool)newTabBrowser.Busy; } catch {}
+                    string locName = null;
+                    try { locName = (string)newTabBrowser.LocationName; } catch {}
+
+                    if (defViewReady && !isBusy && !string.IsNullOrEmpty(locName)) {
+                        break;
+                    }
+                } catch {}
+                Thread.Sleep(10);
+            }
+            Thread.Sleep(25);
+
+            // 第三阶段：执行导航并等待目标路径、SHELLDLL_DefView 以及标签页标题彻底摆脱 "This PC" 状态
+            if (!PerformBrowserNavigate(newTabBrowser, targetPath, shell)) {
+                return false;
+            }
+
+            bool targetIsDefault = IsTargetDefaultNewTab(targetPath);
+            bool reachedTarget = false;
+            for (int check = 0; check < 70; check++) {
+                Thread.Sleep(15);
+                try {
+                    bool isBusy = false;
+                    try { isBusy = (bool)newTabBrowser.Busy; } catch {}
+                    string curPath = DaemonWatcher.ExtractPathFromBrowser(newTabBrowser);
+                    string locName = null;
+                    try { locName = (string)newTabBrowser.LocationName; } catch {}
+                    string tabWinTitle = (newTabHwnd != IntPtr.Zero) ? Win32.GetWindowTitle(newTabHwnd) : locName;
+
+                    bool pathOk = IsPathMatch(targetPath, curPath);
+                    bool titleUpdated = targetIsDefault || (!IsDefaultNewTabTitle(locName) && !IsDefaultNewTabTitle(tabWinTitle));
+                    bool defViewReady = (newTabHwnd == IntPtr.Zero) || Win32.IsTabDefViewReady(newTabHwnd);
+
+                    if (!isBusy && pathOk && titleUpdated && defViewReady) {
+                        reachedTarget = true;
+                        break;
+                    }
+
+                    // 若第 15 次 (~225ms) 或第 35 次 (~525ms) 仍卡在 This PC 默认标题或路径未就绪，自动重发一次 Navigate2
+                    if ((check == 15 || check == 35) && !isBusy && (!pathOk || !titleUpdated)) {
+                        PerformBrowserNavigate(newTabBrowser, targetPath, shell);
+                    }
+                } catch {}
+            }
+
+            if (reachedTarget && selectedItems != null && selectedItems.Count > 0) {
+                SelectItemsInBrowser(newTabBrowser, selectedItems);
+            }
+
+            // 留出 35ms 供 Win11 XAML TabView 完成 UI 同步，防止并发打开下一个文件夹时冲撞当前标签
+            Thread.Sleep(35);
+            return reachedTarget;
         }
 
         private static void WaitAndSelectItemsInBrowser(dynamic browser, string targetPath, IList<string> selectedItems) {

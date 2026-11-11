@@ -95,7 +95,9 @@ namespace ExplorerTabRouter {
                 }
 
                 foreach (IntPtr cab in _knownCabinets) {
-                    SyncCabinetTabs(cab);
+                    if (!_pendingInterception.Contains(cab)) {
+                        SyncCabinetTabs(cab);
+                    }
                 }
             }
         }
@@ -217,7 +219,10 @@ namespace ExplorerTabRouter {
                 lock (_lock) {
                     IntPtr ownerCab;
                     if (_tabToCabinet.TryGetValue(hWnd, out ownerCab)) {
-                        if (Win32.IsWindow(ownerCab) && Win32.IsWindowVisible(ownerCab)) {
+                        if (!_pendingInterception.Contains(ownerCab) &&
+                            Win32.IsWindow(ownerCab) &&
+                            Win32.IsWindowVisible(ownerCab) &&
+                            !Win32.IsWindowInterceptedHidden(ownerCab)) {
                             _lastTabDestroyedTick = Environment.TickCount;
                         }
                         _tabToCabinet.Remove(hWnd);
@@ -566,6 +571,13 @@ namespace ExplorerTabRouter {
                     lock (_lock) {
                         _pendingInterception.Remove(newHwnd);
                         _knownCabinets.Remove(newHwnd);
+                        HashSet<IntPtr> interceptedTabs;
+                        if (_cabinetTabs.TryGetValue(newHwnd, out interceptedTabs)) {
+                            foreach (IntPtr t in interceptedTabs) {
+                                _tabToCabinet.Remove(t);
+                            }
+                            _cabinetTabs.Remove(newHwnd);
+                        }
                     }
 
                     // 立即发送 WM_CLOSE 关闭多余新窗口

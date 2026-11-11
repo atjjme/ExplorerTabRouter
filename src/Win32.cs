@@ -319,34 +319,21 @@ namespace ExplorerTabRouter {
             } catch {}
         }
 
+        private static readonly IntPtr _defaultDesktop = OpenDesktop("Default", 0, false, 0x01FF);
+
         /// <summary>
-        /// 确保当前线程附加到交互式桌面上（仅在当前线程无法枚举桌面窗口时按需切换，避免高频内核句柄开销）
+        /// 确保当前线程永久绑定到交互式 Default 桌面上（零句柄泄漏、零重复开销）
+        /// 必须在主线程创建任何 WinForms 控件或 Hook 之前首次调用
         /// </summary>
-        public static IDisposable AttachToInteractiveDesktop() {
-            if (FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, null) != IntPtr.Zero) {
-                return DummyScope.Instance;
+        public static void EnsureInteractiveDesktop() {
+            if (_defaultDesktop != IntPtr.Zero) {
+                SetThreadDesktop(_defaultDesktop);
             }
-            IntPtr hDesk = OpenDesktop("Default", 0, false, 0x01FF);
-            if (hDesk != IntPtr.Zero) {
-                if (SetThreadDesktop(hDesk)) {
-                    return new DesktopScope(hDesk);
-                }
-                CloseDesktop(hDesk);
-            }
-            return DummyScope.Instance;
         }
 
-        private class DesktopScope : IDisposable {
-            private IntPtr _hDesk;
-            public DesktopScope(IntPtr hDesk) {
-                _hDesk = hDesk;
-            }
-            public void Dispose() {
-                if (_hDesk != IntPtr.Zero) {
-                    CloseDesktop(_hDesk);
-                    _hDesk = IntPtr.Zero;
-                }
-            }
+        public static IDisposable AttachToInteractiveDesktop() {
+            EnsureInteractiveDesktop();
+            return DummyScope.Instance;
         }
 
         private class DummyScope : IDisposable {
@@ -458,6 +445,70 @@ namespace ExplorerTabRouter {
                 }
                 return list;
             }
+        }
+
+        [ComImport]
+        [Guid("6d5140c1-7436-11ce-8034-00aa006009fa")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IServiceProvider {
+            [PreserveSig] int QueryService(ref Guid guidService, ref Guid riid, out IntPtr ppvObject);
+        }
+
+        [ComImport]
+        [Guid("00000114-0000-0000-C000-000000000046")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IOleWindow {
+            [PreserveSig] int GetWindow(out IntPtr phwnd);
+            [PreserveSig] int ContextSensitiveHelp(bool fEnterMode);
+        }
+
+        private static Guid SID_STopLevelBrowser = new Guid("4C96BE40-915C-11CF-99D3-00AA004AE837");
+        private static Guid IID_IOleWindow = new Guid("00000114-0000-0000-C000-000000000046");
+
+        /// <summary>
+        /// 从 Shell.Windows() 的 Browser COM 对象直接获取其对应的底层 ShellTabWindowClass 窗口句柄
+        /// </summary>
+        public static IntPtr GetTabHwndFromBrowser(object browser) {
+            if (browser == null) return IntPtr.Zero;
+            try {
+                IServiceProvider sp = browser as IServiceProvider;
+                if (sp == null) return IntPtr.Zero;
+                IntPtr ptr;
+                if (sp.QueryService(ref SID_STopLevelBrowser, ref IID_IOleWindow, out ptr) == 0 && ptr != IntPtr.Zero) {
+                    try {
+                        IOleWindow ole = (IOleWindow)Marshal.GetObjectForIUnknown(ptr);
+                        IntPtr hwnd;
+                        if (ole.GetWindow(out hwnd) == 0) {
+                            return hwnd;
+                        }
+                    } finally {
+                        Marshal.Release(ptr);
+                    }
+                }
+            } catch {}
+            return IntPtr.Zero;
+        }
+
+        /// <summary>
+        /// 检查指定的 ShellTabWindowClass 标签页是否已完成内部 SHELLDLL_DefView 视图挂载并处于可见状态
+        /// </summary>
+        public static bool IsTabDefViewReady(IntPtr tabHwnd) {
+            if (tabHwnd == IntPtr.Zero || !IsWindow(tabHwnd) || !IsWindowVisible(tabHwnd)) return false;
+            IntPtr duiView = FindWindowEx(tabHwnd, IntPtr.Zero, "DUIViewWndClassName", null);
+            if (duiView == IntPtr.Zero || !IsWindowVisible(duiView)) return false;
+            IntPtr directUi = FindWindowEx(duiView, IntPtr.Zero, "DirectUIHWND", null);
+            if (directUi == IntPtr.Zero || !IsWindowVisible(directUi)) return false;
+
+            IntPtr sink = IntPtr.Zero;
+            while (true) {
+                sink = FindWindowEx(directUi, sink, "CtrlNotifySink", null);
+                if (sink == IntPtr.Zero) break;
+                IntPtr defView = FindWindowEx(sink, IntPtr.Zero, "SHELLDLL_DefView", null);
+                if (defView != IntPtr.Zero && IsWindowVisible(defView)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>

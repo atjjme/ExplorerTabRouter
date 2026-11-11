@@ -9,6 +9,9 @@ namespace ExplorerTabRouter {
 
         [STAThread]
         public static void Main(string[] args) {
+            // 第一时间将主线程绑定到交互式桌面（必须在创建任何窗口、托盘或消息循环之前调用）
+            Win32.EnsureInteractiveDesktop();
+
             // 如果无参数启动（直接双击 exe）
             if (args == null || args.Length == 0) {
                 bool createdNew;
