@@ -24,19 +24,13 @@ namespace ExplorerTabRouter {
         private int _lastTabDestroyedTick = 0;
         private readonly object _lock = new object();
         private bool _isPaused = false;
-        private dynamic _shell;
 
-        private dynamic GetShell() {
+        private static dynamic CreateShellInstance() {
             try {
-                if (_shell != null) {
-                    var count = _shell.Windows().Count;
-                    return _shell;
-                }
-            } catch {}
-            try {
-                _shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
-            } catch {}
-            return _shell;
+                return Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));
+            } catch {
+                return null;
+            }
         }
 
         private void SyncCabinetTabs(IntPtr cabinet) {
@@ -107,6 +101,9 @@ namespace ExplorerTabRouter {
         }
 
         public void Start(bool showTray = true) {
+            // 自动清理可能存在的历史遗留注册表关联（含静默模式），确保内部浏览绝不被误伤
+            RegistryHelper.CleanupLegacyFolderAssociation();
+
             // 初始化已知 Explorer 窗口与标签状态
             lock (_lock) {
                 foreach (IntPtr h in Win32.GetAllCabinetWindows()) {
@@ -152,9 +149,6 @@ namespace ExplorerTabRouter {
             });
             pauseItem.Checked = !_isPaused;
             _contextMenu.Items.Add(pauseItem);
-
-            // 自动清理可能存在的历史遗留注册表关联，确保内部浏览绝不被误伤
-            RegistryHelper.CleanupLegacyFolderAssociation();
 
             // 开机启动选项
             ToolStripMenuItem autoStartItem = new ToolStripMenuItem("开机自动启动", null, (s, e) => {
@@ -356,27 +350,20 @@ namespace ExplorerTabRouter {
                 return;
             }
 
-            // 关键判断 4：查找系统中是否存在其他已有的宿主 Explorer 窗口
+            // 关键判断 4：查找系统中是否存在其他已有的宿主 Explorer 窗口（严格排除正在拦截的隐形窗口）
             List<IntPtr> allCabinets = Win32.GetAllCabinetWindows();
             IntPtr hostCabinet = IntPtr.Zero;
-            foreach (IntPtr c in allCabinets) {
-                if (c != hWnd && Win32.IsWindowVisible(c)) {
-                    hostCabinet = c;
-                    break;
-                }
-            }
+            lock (_lock) {
+                hostCabinet = ExplorerManager.SelectBestCabinet(allCabinets, hWnd, _pendingInterception);
 
-            // 如果没有其他已有窗口，这本身就是第一个主窗口，直接放行
-            if (hostCabinet == IntPtr.Zero) {
-                lock (_lock) {
+                // 如果没有其他已有窗口，这本身就是第一个主窗口，直接放行
+                if (hostCabinet == IntPtr.Zero) {
                     _knownCabinets.Add(hWnd);
                     SyncCabinetTabs(hWnd);
+                    return;
                 }
-                return;
-            }
 
-            // 此时确定这是一个外部新弹出的多余 Explorer 窗口，进入待拦截流程
-            lock (_lock) {
+                // 此时确定这是一个外部新弹出的多余 Explorer 窗口，进入待拦截流程
                 _knownCabinets.Add(hWnd);
                 _pendingInterception.Add(hWnd);
             }
@@ -475,11 +462,13 @@ namespace ExplorerTabRouter {
         }
 
         private void HandleNewExplorerWindow(IntPtr newHwnd, IntPtr hostCabinet) {
+            dynamic shell = null;
             try {
                 using (Win32.AttachToInteractiveDesktop()) {
-                    dynamic shell = GetShell();
+                    shell = CreateShellInstance();
 
                     string openedPath = string.Empty;
+                    List<string> selectedItems = null;
                     bool isSpecial = false;
 
                     // 1. 超低延时自旋检测新窗口路径与标题 (每 10ms 轮询一次，最多等 800ms)
@@ -495,7 +484,7 @@ namespace ExplorerTabRouter {
                         }
 
                         string curTitle = Win32.GetWindowTitle(newHwnd);
-                        openedPath = GetPathFromHwnd(newHwnd, shell);
+                        openedPath = GetPathAndSelectionFromHwnd(newHwnd, shell, out selectedItems);
 
                         if (IsSpecialSystemWindow(openedPath, curTitle)) {
                             isSpecial = true;
@@ -526,7 +515,7 @@ namespace ExplorerTabRouter {
                     }
 
                     // 3. 如果拿到了 openedPath，再额外做最多 10 次 × 10ms (100ms) 的 IsTabTearOff 确认
-                    // （以防 Explorer 先创建新窗口标签、几十毫秒后才从原窗口移除旧标签）
+                    // （以防 Explorer 先创建新窗口标签、几十毫秒后才从原窗口移除旧标签；同时捕获异步完成的选中项）
                     if (!string.IsNullOrEmpty(openedPath)) {
                         for (int j = 0; j < 10; j++) {
                             if (IsTabTearOff(newHwnd)) {
@@ -536,6 +525,13 @@ namespace ExplorerTabRouter {
                                 Win32.RestoreWindow(newHwnd);
                                 RefreshAllKnownCabinetTabs();
                                 return;
+                            }
+                            if (selectedItems == null || selectedItems.Count == 0) {
+                                List<string> lateSel;
+                                GetPathAndSelectionFromHwnd(newHwnd, shell, out lateSel);
+                                if (lateSel != null && lateSel.Count > 0) {
+                                    selectedItems = lateSel;
+                                }
                             }
                             Thread.Sleep(10);
                         }
@@ -551,6 +547,21 @@ namespace ExplorerTabRouter {
                         return;
                     }
 
+                    // 4.5 再次确认宿主窗口仍然存活；若原宿主已关闭，尝试重新选取其它可用宿主，若无则直接恢复新窗口
+                    if (!Win32.IsWindow(hostCabinet) || Win32.IsWindowInterceptedHidden(hostCabinet)) {
+                        lock (_lock) {
+                            hostCabinet = ExplorerManager.SelectBestCabinet(Win32.GetAllCabinetWindows(), newHwnd, _pendingInterception);
+                            if (hostCabinet == IntPtr.Zero) {
+                                _pendingInterception.Remove(newHwnd);
+                            }
+                        }
+                        if (hostCabinet == IntPtr.Zero) {
+                            Win32.RestoreWindow(newHwnd);
+                            RefreshAllKnownCabinetTabs();
+                            return;
+                        }
+                    }
+
                     // 5. 确认是外部打开的文件夹（或回收站）：
                     lock (_lock) {
                         _pendingInterception.Remove(newHwnd);
@@ -560,8 +571,8 @@ namespace ExplorerTabRouter {
                     // 立即发送 WM_CLOSE 关闭多余新窗口
                     Win32.PostMessage(newHwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
 
-                    // 在宿主窗口中打开该路径（新标签或切换至已打开标签）
-                    ExplorerManager.RouteOpenIntoCabinet(hostCabinet, openedPath, shell);
+                    // 在宿主窗口中打开该路径（新标签或切换至已打开标签，并保留文件选中高亮）
+                    ExplorerManager.RouteOpenIntoCabinet(hostCabinet, openedPath, shell, selectedItems);
                     Win32.ForceForegroundWindow(hostCabinet);
 
                     // 路由完成后同步宿主窗口标签状态
@@ -574,10 +585,15 @@ namespace ExplorerTabRouter {
                 }
                 Win32.RestoreWindow(newHwnd);
                 RefreshAllKnownCabinetTabs();
+            } finally {
+                if (shell != null && Marshal.IsComObject(shell)) {
+                    try { Marshal.FinalReleaseComObject(shell); } catch {}
+                }
             }
         }
 
-        private static string GetPathFromHwnd(IntPtr hWnd, dynamic shell) {
+        private static string GetPathAndSelectionFromHwnd(IntPtr hWnd, dynamic shell, out List<string> selectedItems) {
+            selectedItems = null;
             if (shell == null) return string.Empty;
             try {
                 var windows = shell.Windows();
@@ -586,12 +602,41 @@ namespace ExplorerTabRouter {
                     try {
                         if (w != null && (long)w.HWND == (long)hWnd) {
                             string p = ExtractPathFromBrowser(w);
-                            if (!string.IsNullOrEmpty(p)) return p;
+                            if (!string.IsNullOrEmpty(p)) {
+                                selectedItems = ExtractSelectedPathsFromBrowser(w);
+                                return p;
+                            }
                         }
                     } catch {}
                 }
             } catch {}
             return string.Empty;
+        }
+
+        public static List<string> ExtractSelectedPathsFromBrowser(dynamic w) {
+            List<string> list = null;
+            try {
+                dynamic doc = w.Document;
+                if (doc != null) {
+                    dynamic items = doc.SelectedItems();
+                    if (items != null) {
+                        int count = (int)items.Count;
+                        if (count > 0) {
+                            list = new List<string>(count);
+                            for (int i = 0; i < count; i++) {
+                                dynamic item = items.Item(i);
+                                if (item != null) {
+                                    string p = (string)item.Path;
+                                    if (!string.IsNullOrEmpty(p)) {
+                                        list.Add(p);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {}
+            return list;
         }
 
         public static string ExtractPathFromBrowser(dynamic w) {

@@ -172,6 +172,9 @@ namespace ExplorerTabRouter {
         [DllImport("user32.dll")]
         public static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
 
+        [DllImport("user32.dll")]
+        public static extern bool GetLayeredWindowAttributes(IntPtr hWnd, out uint pcrKey, out byte pbAlpha, out uint pdwFlags);
+
         public static int GetWindowLong(IntPtr hWnd, int nIndex) {
             if (IntPtr.Size == 8)
                 return unchecked((int)GetWindowLongPtr64(hWnd, nIndex).ToInt64());
@@ -182,6 +185,24 @@ namespace ExplorerTabRouter {
             if (IntPtr.Size == 8)
                 return SetWindowLongPtr64(hWnd, nIndex, new IntPtr(dwNewLong));
             return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong));
+        }
+
+        /// <summary>
+        /// 判断窗口是否正处于被本程序隐形拦截状态（避免被误选为宿主窗口）
+        /// </summary>
+        public static bool IsWindowInterceptedHidden(IntPtr hWnd) {
+            if (hWnd == IntPtr.Zero || !IsWindow(hWnd)) return true;
+            int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+            if ((exStyle & WS_EX_TOOLWINDOW) != 0 && (exStyle & WS_EX_LAYERED) != 0) {
+                uint crKey, dwFlags;
+                byte alpha;
+                if (GetLayeredWindowAttributes(hWnd, out crKey, out alpha, out dwFlags)) {
+                    if ((dwFlags & LWA_ALPHA) != 0 && alpha == 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         [ComImport]
@@ -299,15 +320,20 @@ namespace ExplorerTabRouter {
         }
 
         /// <summary>
-        /// 确保当前线程附加到交互式桌面上，以便在后台任务中枚举和操作窗口
+        /// 确保当前线程附加到交互式桌面上（仅在当前线程无法枚举桌面窗口时按需切换，避免高频内核句柄开销）
         /// </summary>
         public static IDisposable AttachToInteractiveDesktop() {
+            if (FindWindowEx(IntPtr.Zero, IntPtr.Zero, null, null) != IntPtr.Zero) {
+                return DummyScope.Instance;
+            }
             IntPtr hDesk = OpenDesktop("Default", 0, false, 0x01FF);
             if (hDesk != IntPtr.Zero) {
-                SetThreadDesktop(hDesk);
-                return new DesktopScope(hDesk);
+                if (SetThreadDesktop(hDesk)) {
+                    return new DesktopScope(hDesk);
+                }
+                CloseDesktop(hDesk);
             }
-            return new DummyScope();
+            return DummyScope.Instance;
         }
 
         private class DesktopScope : IDisposable {
@@ -324,6 +350,7 @@ namespace ExplorerTabRouter {
         }
 
         private class DummyScope : IDisposable {
+            public static readonly DummyScope Instance = new DummyScope();
             public void Dispose() {}
         }
 

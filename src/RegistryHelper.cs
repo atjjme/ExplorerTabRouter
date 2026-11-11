@@ -13,22 +13,42 @@ namespace ExplorerTabRouter {
         }
 
         /// <summary>
-        /// 自动清理历史遗留的免常驻注册表文件夹关联，确保系统 100% 恢复原生纯净
+        /// 自动清理历史遗留的免常驻注册表文件夹关联，确保系统 100% 恢复原生纯净，且不误伤第三方扩展
         /// </summary>
         public static void CleanupLegacyFolderAssociation() {
+            CleanupClassShellOpen(@"Software\Classes\Folder");
+            CleanupClassShellOpen(@"Software\Classes\Directory");
+        }
+
+        private static void CleanupClassShellOpen(string classKeyPath) {
             try {
-                // 清理 HKCU 下残留的 Folder\shell 项，避免其覆盖系统 HKLM 默认关联导致回收站等双击失效
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Folder", false)) {
-                    if (key != null) {
-                        Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Folder", false);
+                string openCmdPath = classKeyPath + @"\shell\open\command";
+                bool shouldRemoveOpen = false;
+                using (RegistryKey cmdKey = Registry.CurrentUser.OpenSubKey(openCmdPath, false)) {
+                    if (cmdKey != null) {
+                        string defaultVal = cmdKey.GetValue(null) as string;
+                        if (string.IsNullOrEmpty(defaultVal) ||
+                            defaultVal.IndexOf("ExplorerTabRouter", StringComparison.OrdinalIgnoreCase) >= 0) {
+                            shouldRemoveOpen = true;
+                        }
                     }
                 }
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Directory\shell", false)) {
-                    if (key != null) {
-                        // 如果 shell 下没有任何其他自定义命令，则清理掉以还原默认
-                        if (key.SubKeyCount == 0) {
-                            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Directory\shell", false);
-                        }
+
+                if (shouldRemoveOpen) {
+                    Registry.CurrentUser.DeleteSubKeyTree(classKeyPath + @"\shell\open", false);
+                }
+
+                // 若 shell 下已无任何子项与键值，则清理空的 shell 项
+                using (RegistryKey shellKey = Registry.CurrentUser.OpenSubKey(classKeyPath + @"\shell", false)) {
+                    if (shellKey != null && shellKey.SubKeyCount == 0 && shellKey.ValueCount == 0) {
+                        Registry.CurrentUser.DeleteSubKeyTree(classKeyPath + @"\shell", false);
+                    }
+                }
+
+                // 若 classKeyPath 下已无任何子项与键值，则清理空项
+                using (RegistryKey classKey = Registry.CurrentUser.OpenSubKey(classKeyPath, false)) {
+                    if (classKey != null && classKey.SubKeyCount == 0 && classKey.ValueCount == 0) {
+                        Registry.CurrentUser.DeleteSubKeyTree(classKeyPath, false);
                     }
                 }
             } catch {
